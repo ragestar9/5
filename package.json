@@ -11,6 +11,8 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.10",
+    "@fontsource/bitcount-grid-single-ink": "^5.2.1",
+    "@fontsource/plaster": "^5.2.7",
     "@react-three/fiber": "^9.6.1",
     "@types/three": "^0.185.1",
     "animejs": "^4.5.0",

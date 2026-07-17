@@ -15,6 +15,16 @@
     <!-- ==================== PIXEL-ARC BACKGROUND (deepest) ==================== -->
     <canvas id="arc-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 -z-10 h-full w-full"></canvas>
 
+    <!-- ==================== FOREGROUND INK TRAIL (pointer overlay) ==================== -->
+    <canvas id="ink-trail" aria-hidden="true" class="pointer-events-none fixed inset-0 z-[74] h-full w-full mix-blend-screen" style="opacity: 0.5"></canvas>
+
+    <!-- ==================== PORT WIPE TRANSITION ==================== -->
+    <div id="port-wipe" class="pointer-events-none fixed inset-0 z-[98] hidden">
+      <div id="wipe-top" class="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-ink2 border-b border-acid" style="transform: translateY(-105%)"></div>
+      <div id="wipe-bot" class="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-ink2 border-t border-acid" style="transform: translateY(105%)"></div>
+      <div id="wipe-scan" class="absolute inset-x-0 h-[2px] bg-acid" style="top: 50%; opacity: 0; box-shadow: 0 0 30px 2px rgba(var(--acid-rgb), 0.8)"></div>
+    </div>
+
     <!-- ==================== PERSISTENT SHADER LAYER ==================== -->
     <div id="fx-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 z-0 opacity-[0.28] mix-blend-screen"></div>
 
@@ -74,16 +84,40 @@
 
     <!-- ==================== PRELOADER ==================== -->
     <div id="preloader" class="fixed inset-0 z-[100] flex flex-col bg-ink">
+      <!-- top chrome -->
       <div class="flex h-12 items-center justify-between border-b border-line px-4 md:px-8">
         <span class="tick-label flex items-center gap-2 text-bone">
           <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>STRINGRUNTIME — BOOT SEQUENCE
         </span>
         <span class="tick-label text-fog">FEAT / THREEJS-EXTEND</span>
       </div>
-      <div class="relative flex flex-1 items-center justify-center">
+
+      <!-- center: branding splash + counter -->
+      <div class="relative flex flex-1 flex-col items-center justify-center gap-4">
         <div class="grid-bg pointer-events-none absolute inset-0 opacity-60"></div>
-        <div class="relative text-center">
-          <div class="font-mono text-[clamp(5rem,18vw,14rem)] font-light leading-none tabular-nums text-bone">
+
+        <!-- RAGESTAR PRESENTS -->
+        <div id="boot-brand" class="relative text-center" style="opacity: 0">
+          <div class="tick-label mb-3 tracking-[0.5em] text-fog">PRESENTS</div>
+          <div style="font-family: 'Plaster', display; letter-spacing: 0.06em" class="text-[clamp(2.4rem,7vw,5.6rem)] leading-none text-acid">
+            RAGESTAR
+          </div>
+        </div>
+
+        <!-- STRNG UI v0.1 -->
+        <div id="boot-product" class="relative mt-2 text-center" style="opacity: 0">
+          <div style="font-family: 'Bitcount Grid Single Ink', monospace; letter-spacing: 0.18em" class="text-[clamp(1.6rem,5vw,4rem)] uppercase leading-none text-bone">
+            Strng UI <span class="text-acid">v0.1</span>
+          </div>
+          <div class="tick-label mt-3 text-fog">A 3D MOTION RUNTIME — ONE FILE — ZERO FRAMEWORK</div>
+        </div>
+
+        <!-- divider -->
+        <div id="boot-divider" class="mx-auto mt-4 h-px w-48 bg-line2" style="opacity: 0; transform: scaleX(0)"></div>
+
+        <!-- counter -->
+        <div class="relative mt-4 text-center">
+          <div class="font-mono text-[clamp(3.5rem,12vw,9rem)] font-light leading-none tabular-nums text-bone">
             <span id="boot-count">000</span><span class="text-acid">%</span>
           </div>
           <div class="tick-label mt-4 text-fog">
@@ -91,6 +125,8 @@
           </div>
         </div>
       </div>
+
+      <!-- bottom chrome -->
       <div class="border-t border-line">
         <div class="flex h-10 items-center justify-between px-4 md:px-8">
           <span class="tick-label tabular-nums text-fog">MODULE <span id="boot-mod">01</span>/16</span>
@@ -121,16 +157,25 @@
           <span class="mx-2 text-line2">·</span><span id="hud-mod-prog" class="tabular-nums text-fog">000%</span>
         </span>
         <div class="flex items-center gap-4">
+          <span id="hud-local" class="tick-label hidden tabular-nums text-fog xl:block">GMT+0 00:00</span>
           <span id="hud-clock" class="tick-label hidden tabular-nums text-fog lg:block">00:00:00 UTC</span>
+          <button id="sound-open" class="dot-hover tick-label hidden items-center gap-2 border border-line px-2 py-1 text-fog transition-colors duration-300 hover:border-acid hover:text-acid sm:flex" title="Ambient synth (M)">
+            <span id="snd-bars" class="flex h-3 items-end gap-[2px]" aria-hidden="true">
+              <span class="snd-bar w-[2px] bg-acid"></span>
+              <span class="snd-bar w-[2px] bg-acid"></span>
+              <span class="snd-bar w-[2px] bg-acid"></span>
+            </span>
+            <span id="snd-label">SOUND OFF</span>
+          </button>
           <span class="tick-label hidden items-center gap-2 text-fog sm:flex">
             <svg class="h-3 w-3 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 7 7 17M17 17V7H7"/></svg>
             FEAT / WEBGL
           </span>
-          <button id="glyph-toggle" class="tick-label hidden items-center gap-2 border border-line px-2 py-1 text-fog transition-colors duration-300 hover:border-acid hover:text-acid sm:flex" title="Glyph storm (X)">
+          <button id="glyph-toggle" class="dot-hover tick-label hidden items-center gap-2 border border-line px-2 py-1 text-fog transition-colors duration-300 hover:border-acid hover:text-acid sm:flex" title="Glyph storm (X)">
             <span class="h-1.5 w-1.5 bg-line2"></span>
             <span>GLYPH STORM</span>
           </button>
-          <button id="port-open" class="tick-label hidden items-center gap-2 border border-acid px-2 py-1 text-acid transition-transform duration-300 hover:scale-105 sm:flex" title="Portstack transport (\)">
+          <button id="port-open" class="dot-hover tick-label hidden items-center gap-2 border border-acid px-2 py-1 text-acid transition-transform duration-300 hover:scale-105 sm:flex" title="Portstack transport (\)">
             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h13m0 0-5-5m5 5-5 5M21 5v14"/></svg>
             <span>PORT</span>
           </button>
@@ -142,9 +187,11 @@
     <div id="rail" class="fixed right-2.5 top-1/2 z-[60] hidden -translate-y-1/2 flex-col items-end gap-[5px] lg:flex"></div>
 
     <aside id="tele-bot" class="hud-in fixed bottom-0 left-0 z-[60] hidden border-r border-t border-line bg-ink/72 backdrop-blur-md md:block" style="--hud-t: translateY(102%)">
-      <div class="grid grid-cols-4 divide-x divide-line">
+      <div class="grid grid-cols-6 divide-x divide-line">
         <div class="px-3 py-2"><div class="tick-label text-fog">PXL</div><div id="t-pxl" class="tick-label mt-0.5 tabular-nums text-bone">00000</div></div>
         <div class="px-3 py-2"><div class="tick-label text-fog">PCT</div><div id="t-pct" class="tick-label mt-0.5 tabular-nums text-bone">00%</div></div>
+        <div class="px-3 py-2"><div class="tick-label text-fog">X</div><div id="t-x" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
+        <div class="px-3 py-2"><div class="tick-label text-fog">Y</div><div id="t-y" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
         <div class="px-3 py-2"><div class="tick-label text-fog">VEL</div><div id="t-vel" class="tick-label mt-0.5 tabular-nums text-bone">+0</div></div>
         <div class="px-3 py-2"><div class="tick-label text-fog">DIR</div><div id="t-dir" class="tick-label mt-0.5 tabular-nums text-bone">·</div></div>
       </div>
@@ -190,7 +237,7 @@
           <span class="tick-label hidden text-fog lg:inline">VERTEX FIELD <span id="hero-res" class="text-acid">HI-RES</span></span>
         </div>
 
-        <h1 class="font-display text-[clamp(2.9rem,8.6vw,8.2rem)] font-medium leading-[0.96] tracking-[-0.03em] text-bone">
+        <h1 class="velo-wght font-display text-[clamp(2.9rem,8.6vw,8.2rem)] font-medium leading-[0.96] tracking-[-0.03em] text-bone">
           <span class="w-mask"><span class="w-in" style="transition-delay: 0.1s">TUNE&nbsp;</span></span><span class="w-mask"><span class="w-in" style="transition-delay: 0.19s">THE&nbsp;</span></span><span class="w-mask"><span class="w-in" style="transition-delay: 0.28s">WEB</span></span><br />
           <span class="w-mask"><span class="w-in" style="transition-delay: 0.42s">INTO&nbsp;</span></span><span class="w-mask"><span class="w-in text-acid" style="transition-delay: 0.51s">MOTION.</span></span>
         </h1>
@@ -407,7 +454,7 @@
       <div class="mx-auto max-w-[1440px] px-5 pb-16 md:px-10 md:pb-24">
         <div class="grid-bg relative flex h-[52vh] min-h-[360px] flex-col items-center justify-center overflow-hidden border border-line bg-ink2">
           <div id="lerp-word" class="will-change-transform">
-            <span class="select-none font-display text-[clamp(3.4rem,11vw,10rem)] font-semibold leading-none tracking-[-0.04em] text-bone">VELOC<span class="text-acid">I</span>TY</span>
+            <span class="velo-wght select-none font-display text-[clamp(3.4rem,11vw,10rem)] font-semibold leading-none tracking-[-0.04em] text-bone">VELOC<span class="text-acid">I</span>TY</span>
           </div>
           <div class="tick-label mt-8 flex items-center gap-4 text-fog">
             <svg id="lerp-down" class="hidden h-3.5 w-3.5 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0 6-6m-6 6-6-6"/></svg>
@@ -753,6 +800,29 @@
       </div>
     </section>
 
+    <!-- ==================== +S STATEMENT (pinned typography) ==================== -->
+    <section id="m-statement" data-module="+S / STRINGSTATEMENT" class="relative border-t border-line">
+      <div id="stmt-wrap" class="relative h-[300vh]">
+        <div class="grid-bg sticky top-0 flex h-screen flex-col items-center justify-center overflow-hidden border-t border-line bg-ink2/60">
+          <div class="tick-label mb-8 flex items-center gap-2 text-fog">
+            <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>
+            MODULE <span class="text-bone">+S</span> — <span class="text-acid">STRINGSTATEMENT</span>
+            <span class="ml-3 hidden text-line2 md:inline">PINNED · SCROLL-DRIVEN</span>
+          </div>
+          <h3 class="stmt-line px-4 text-center font-display font-medium leading-[1.04] tracking-[-0.03em] text-bone" style="font-size: clamp(2.6rem, 7.5vw, 6.8rem)">
+            <span class="stmt-word" data-w="0">TUNE</span> <span class="stmt-word" data-w="1">THE</span> <span class="stmt-word" data-w="2">WEB,</span><br />
+            <span class="stmt-word" data-w="3">NOW</span> <span class="stmt-word" data-w="4">IN</span> <span class="stmt-word text-acid" data-w="5">MOTION.</span>
+          </h3>
+          <div class="tick-label mt-10 flex items-center gap-4 text-fog">
+            <span>READOUT</span>
+            <span id="stmt-pct" class="tabular-nums text-bone">000%</span>
+            <span class="h-px w-16 bg-line"></span>
+            <span>EVERY FRAME, EVERY LETTER</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ==================== 10 SPLIT ==================== -->
     <section id="m-split" data-module="10 / STRINGSPLIT" class="relative border-t border-line">
       <div class="mx-auto max-w-[1440px] px-5 pt-14 md:px-10 md:pt-20">
@@ -777,7 +847,7 @@
             <div class="overflow-hidden"><div class="split-line flex flex-wrap" data-split="HAS ITS OWN"></div></div>
             <div class="overflow-hidden"><div class="split-line split-acid flex flex-wrap" data-split="TIMING."></div></div>
           </div>
-          <button id="split-replay" class="tick-label group mt-10 flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
+          <button id="split-replay" class="dot-hover tick-label group mt-10 flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
             <svg class="h-3.5 w-3.5 text-acid transition-transform duration-300 group-hover:scale-125" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v6h6M4 10a8 8 0 1 1-2 5"/></svg>
             REBUILD TYPE
           </button>
@@ -808,19 +878,25 @@
       </div>
       <div class="mx-auto max-w-[1440px] px-5 pb-16 md:px-10 md:pb-24">
         <div id="mask-stage" class="relative h-[70vh] min-h-[440px] overflow-hidden border border-line bg-ink2">
-          <!-- background: acid grid + glow -->
-          <div class="absolute inset-0 grid-bg opacity-90"></div>
-          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(var(--acid-rgb),0.35),transparent_55%),radial-gradient(circle_at_80%_75%,rgba(var(--acid-rgb),0.18),transparent_60%)]"></div>
+          <!-- UNCLIPPED LAYER: the lit surface underneath (theme-tinted, softly glowing) -->
+          <!-- solid acid base tint -->
+          <div class="pointer-events-none absolute inset-0" style="background: color-mix(in oklab, var(--color-acid) 82%, black)"></div>
+          <!-- soft radial highlights for depth -->
+          <div class="pointer-events-none absolute inset-0" style="background: radial-gradient(60% 55% at 22% 28%, rgba(255,255,255,0.28), transparent 70%), radial-gradient(50% 45% at 78% 78%, rgba(0,0,0,0.32), transparent 70%)"></div>
+          <!-- subtle grid overlay for texture (dark lines on lit surface) -->
+          <div class="pointer-events-none absolute inset-0 opacity-40" style="background-image: linear-gradient(to right, rgba(0,0,0,0.16) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.12) 1px, transparent 1px); background-size: 72px 72px"></div>
+          <!-- lit content: dark ink text on lit surface for max contrast on every theme -->
           <div class="absolute inset-0 flex items-center justify-center">
             <div class="text-center">
-              <div class="tick-label text-ink/70">/M UNCLIPPED</div>
-              <div class="mt-3 font-display text-[clamp(3rem,10vw,8rem)] font-semibold leading-none tracking-[-0.03em] text-ink">REVEAL.</div>
-              <div class="tick-label mt-4 text-ink/70">CLIP-PATH · 5-POINT POLYGON · DRIVEN BY SECTION PROGRESS</div>
+              <div class="tick-label" style="color: rgba(8,8,10,0.75)">/M UNCLIPPED</div>
+              <div class="mt-3 font-display text-[clamp(3rem,10vw,8rem)] font-semibold leading-none tracking-[-0.03em]" style="color: #08080a; text-shadow: 0 1px 0 rgba(255,255,255,0.18)">REVEAL.</div>
+              <div class="tick-label mt-4" style="color: rgba(8,8,10,0.72)">CLIP-PATH · 5-POINT POLYGON · DRIVEN BY SECTION PROGRESS</div>
             </div>
           </div>
-          <!-- foreground mask layer -->
+
+          <!-- CLIPPED LAYER: the dark mask that hides the surface until scroll cuts through it -->
           <div id="mask-layer" class="absolute inset-0 bg-ink" style="clip-path: polygon(0% 0, 100% 0, 100% 100%, 0% 100%, 0% 50%)">
-            <div class="absolute inset-0 grid-bg opacity-30"></div>
+            <div class="absolute inset-0 grid-bg opacity-40"></div>
             <div class="absolute inset-0 flex items-center justify-center">
               <div class="text-center">
                 <div class="tick-label text-fog">/M CLIPPED</div>
@@ -831,9 +907,13 @@
               </div>
             </div>
           </div>
-          <div class="tick-label pointer-events-none absolute left-4 top-4 z-10 text-fog">FIG. M · POLYGON CUT</div>
-          <div class="tick-label pointer-events-none absolute right-4 top-4 z-10 tabular-nums text-fog">
-            reveal <span id="mask-pct" class="text-acid">000%</span>
+
+          <!-- chrome badges: always sit above both layers, wear a dark chip for legibility -->
+          <div class="tick-label pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 border border-line2 bg-ink/85 px-2.5 py-1 text-fog backdrop-blur-sm">
+            <span class="h-1 w-1 bg-acid"></span>FIG. M · POLYGON CUT
+          </div>
+          <div class="tick-label pointer-events-none absolute right-4 top-4 z-10 border border-line2 bg-ink/85 px-2.5 py-1 tabular-nums text-fog backdrop-blur-sm">
+            reveal <span id="mask-pct" class="text-bone">000%</span>
           </div>
         </div>
       </div>
@@ -986,6 +1066,40 @@
           <div class="bg-panel p-5"><div class="tick-label text-fog">MEMORY</div><div id="ox-mem" class="tick-label mt-3 tabular-nums text-bone">— MB</div></div>
           <div class="bg-panel p-5"><div class="tick-label text-fog">STATUS</div><div class="tick-label mt-3 text-acid">NOMINAL</div></div>
         </div>
+
+        <!-- hand-drawn signature — draws itself on entry -->
+        <div class="mt-10 flex flex-col items-center gap-2">
+          <svg id="sig-draw" viewBox="0 0 150 62" class="h-14 w-auto text-acid" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path class="sig-path" d="M8 44 C 20 12, 32 10, 28 32 C 26 46, 14 50, 10 42" />
+            <path class="sig-path" d="M34 16 C 50 4, 62 8, 58 26 C 55 42, 40 48, 32 40" />
+            <path class="sig-path" d="M66 40 C 86 28, 108 28, 130 38 C 136 41, 142 44, 146 44" />
+          </svg>
+          <span class="tick-label text-fog">SIGNED · OPERATOR</span>
+        </div>
+
+        <!-- redacted / classified block -->
+        <div class="mx-auto mt-10 flex max-w-xl flex-col items-center gap-3 border border-line2 bg-panel px-6 py-6">
+          <div class="tick-label flex items-center gap-2 text-fog">
+            <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>
+            MODULE <span class="text-bone">+Ω</span> — CLASSIFIED DOCUMENT
+          </div>
+          <button id="redact-open" class="group flex items-center gap-3 font-mono text-sm text-bone" title="Click to enter access code">
+            <span class="tracking-widest text-acid">▓▓▓▓▓▓▓▓▓▓</span>
+            <span class="tick-label text-fog underline decoration-dotted underline-offset-4 transition-colors group-hover:text-acid">[ ENTER ACCESS CODE ]</span>
+          </button>
+          <div id="redact-field" class="hidden flex-col items-center gap-2">
+            <input id="redact-input" type="password" autocomplete="off" spellcheck="false" maxlength="12"
+              class="w-56 border border-acid bg-ink px-4 py-2 text-center font-mono text-sm tracking-[0.3em] text-acid outline-none placeholder:tracking-normal placeholder:text-fog/50"
+              placeholder="access code" />
+            <span class="tick-label text-fog">HINT — THE VERSION</span>
+          </div>
+          <div id="redact-revealed" class="hidden flex-col items-center gap-2 text-center">
+            <span class="tick-label border border-acid bg-acid px-3 py-1 text-ink">ACCESS GRANTED</span>
+            <span class="font-mono text-base text-bone">RAGESTAR LABS × <span class="text-acid">STRNG UI v0.1</span></span>
+            <span class="tick-label text-fog">DECLASSIFIED · LOGGED · NO FURTHER DATA</span>
+          </div>
+        </div>
+
         <div class="mt-10 flex flex-col items-center gap-3">
           <div class="tick-label text-fog">CLOSING IN <span id="ox-count" class="tabular-nums text-acid">00:00</span></div>
           <div class="h-px w-40 bg-line"><div id="ox-bar" class="h-full bg-acid" style="width: 0%"></div></div>
@@ -1007,12 +1121,12 @@
     <!-- ==================== THEME SWATCHES ==================== -->
     <div id="theme-swatches" class="hud-in fixed left-1/2 top-14 z-[60] hidden -translate-x-1/2 items-center gap-2 border border-line bg-ink/72 px-3 py-2 backdrop-blur-md md:flex" style="--hud-t: translateY(-102%)">
       <span class="tick-label text-fog">THEME</span>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="acid" style="background:#c8ff2e" title="Acid"></button>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="cyan" style="background:#5ce1ff" title="Cyan"></button>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="magenta" style="background:#ff5cd6" title="Magenta"></button>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="amber" style="background:#ffb84d" title="Amber"></button>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="nexus" style="background:#5b5bf0" title="Nexus"></button>
-      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="mono" style="background:#e6e6ea" title="Mono"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="acid" style="background:#c8ff2e" title="Acid"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="cyan" style="background:#5ce1ff" title="Cyan"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="magenta" style="background:#ff5cd6" title="Magenta"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="amber" style="background:#ffb84d" title="Amber"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="nexus" style="background:#5b5bf0" title="Nexus"></button>
+      <button class="theme-swatch dot-hover h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="mono" style="background:#e6e6ea" title="Mono"></button>
     </div>
 
     <!-- ==================== DWELL PANEL ==================== -->
@@ -1136,15 +1250,15 @@
         </div>
         <div class="mt-10 flex flex-col items-start justify-between gap-6 border-t border-line pt-6 md:flex-row md:items-center">
           <div class="flex flex-wrap gap-3">
-            <button id="ft-copy" class="tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
+            <button id="ft-copy" class="dot-hover tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
               <svg class="h-4 w-4 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <span id="ft-copy-label">COPY LINK</span>
             </button>
-            <button id="ft-snap" class="tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
+            <button id="ft-snap" class="dot-hover tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
               <svg class="h-4 w-4 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="4"/></svg>
               <span>SNAPSHOT</span>
             </button>
-            <button id="ft-export" class="tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
+            <button id="ft-export" class="dot-hover tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
               <svg class="h-4 w-4 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0-5-5m5 5 5-5M4 21h16"/></svg>
               <span>EXPORT JSON</span>
             </button>
@@ -1155,7 +1269,7 @@
             <svg class="h-3 w-3 text-fog transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M7 7h10v10"/></svg>
           </a>
           <span class="tick-label text-fog">SCENE DISPOSED · BUFFERS RELEASED · © 2026</span>
-          <button id="ft-top" class="tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
+          <button id="ft-top" class="dot-hover tick-label group flex items-center gap-3 border border-line2 px-5 py-3 text-bone transition-colors duration-300 hover:border-acid hover:text-acid">
             BACK TO ORIGIN
             <svg class="h-3.5 w-3.5 text-acid transition-transform duration-300 group-hover:-translate-y-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>
           </button>

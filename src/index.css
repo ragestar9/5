@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "@fontsource-variable/space-grotesk";
 @import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/plaster";
+@import "@fontsource/bitcount-grid-single-ink";
 
 @theme {
   --color-ink: #08080a;
@@ -259,3 +261,43 @@ body.porting > header[data-module], body.porting > section[data-module], body.po
   .rv, .w-in, .h-fade, .hud-in, .ch { transition-duration: 0.01s !important; transition-delay: 0s !important; }
   #hero-dial-svg, body.overdrive { animation: none; }
 }
+
+/* ==================== DOTTED-ANNOTATION HOVER ==================== */
+.dot-hover { position: relative; }
+.dot-hover:hover {
+  outline: 2px dotted color-mix(in oklab, var(--color-acid) 85%, transparent);
+  outline-offset: 3px;
+}
+
+/* ==================== VELOCITY → FONT WEIGHT ==================== */
+.velo-wght {
+  font-variation-settings: "wght" var(--velo-wght, 300);
+  transition: font-variation-settings 0.12s linear;
+  will-change: font-variation-settings;
+}
+
+/* ==================== STATEMENT (pinned typography) ==================== */
+.stmt-word {
+  display: inline-block;
+  opacity: 0.08;
+  transform: translateY(28px);
+  will-change: opacity, transform;
+}
+
+/* ==================== SIGNATURE ==================== */
+.sig-path { visibility: visible; }
+@media (prefers-reduced-motion: reduce) {
+  .sig-path { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; }
+}
+
+/* ==================== SOUND BARS ==================== */
+.snd-bar { height: 2px; transition: height 120ms ease; }
+#sound-open.on .snd-bar:nth-child(1) { animation: sndPulse 0.9s ease-in-out infinite; }
+#sound-open.on .snd-bar:nth-child(2) { animation: sndPulse 0.9s ease-in-out 0.15s infinite; }
+#sound-open.on .snd-bar:nth-child(3) { animation: sndPulse 0.9s ease-in-out 0.3s infinite; }
+@keyframes sndPulse { 0%, 100% { height: 2px; } 50% { height: 12px; } }
+#sound-open.on { border-color: var(--color-acid); color: var(--color-acid); }
+#sound-open.on .snd-bar { background: var(--color-acid); }
+
+/* ==================== INK TRAIL ==================== */
+@media (prefers-reduced-motion: reduce) { #ink-trail { display: none; } }

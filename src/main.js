@@ -29,6 +29,7 @@ const MODULES = [
   { id: "m-webgl",    n: "+3D",  name: "WEBGL",       meta: "Torus-knot rig",             hot: "9" },
   { id: "m-impulse",  n: "09",   name: "IMPULSE",     meta: "Velocity → springs",         hot: "0" },
   { id: "m-drag",     n: "+D",   name: "DRAG",        meta: "Momentum + rest spring",     hot: null },
+  { id: "m-statement",n: "+S",   name: "STATEMENT",   meta: "Pinned typographic moment",  hot: null },
   { id: "m-split",    n: "10",   name: "SPLIT",       meta: "Per-char cascade",           hot: null },
   { id: "m-mask",     n: "+M",   name: "MASK",        meta: "Clip-path wipe",             hot: null },
   { id: "m-sequence", n: "16",   name: "SEQUENCE",    meta: "00–99 frame",                hot: null },
@@ -43,6 +44,52 @@ const scrollToId = (id) => {
   if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, duration: 1.25 });
   else el.scrollIntoView({ behavior: "smooth" });
 };
+
+/* ---- PORT WIPE: shutter teleport — hides the travel ---- */
+let wipeBusy = false;
+function wipeTransport(id) {
+  const el = document.getElementById(id);
+  if (!el) return Promise.resolve(false);
+  if (motion.reduced || wipeBusy) {
+    if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, immediate: true, force: true });
+    else el.scrollIntoView();
+    return Promise.resolve(true);
+  }
+  wipeBusy = true;
+  const wipe = $("#port-wipe");
+  const top = $("#wipe-top");
+  const bot = $("#wipe-bot");
+  const scan = $("#wipe-scan");
+  wipe.classList.remove("hidden");
+  if (lenis) lenis.stop(); else document.documentElement.classList.add("boot-lock");
+  const jump = () => {
+    if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, immediate: true, force: true });
+    else { window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 46); }
+  };
+  return new Promise((resolve) => {
+    /* panels close */
+    animate(top, { y: ["-105%", "0%"], duration: 320, ease: "inOut(4)" });
+    animate(bot, { y: ["105%", "0%"], duration: 320, ease: "inOut(4)" });
+    animate(scan, { opacity: [0, 1], duration: 150, delay: 260 });
+    /* midpoint: teleport while hidden */
+    setTimeout(jump, 340);
+    setTimeout(() => {
+      /* scanline flicker at join */
+      animate(scan, { opacity: [1, 1, 0], duration: 240, fullKeyframes: true });
+      /* panels open */
+      animate(top, { y: ["0%", "105%"], duration: 420, ease: "inOut(4)" });
+      animate(bot, { y: ["0%", "-105%"], duration: 420, ease: "inOut(4)", onComplete: () => {
+        wipe.classList.add("hidden");
+        scan.style.opacity = "0";
+        top.style.transform = "translateY(-105%)";
+        bot.style.transform = "translateY(105%)";
+        if (lenis) lenis.start(); else document.documentElement.classList.remove("boot-lock");
+        wipeBusy = false;
+        resolve(true);
+      } });
+    }, 460);
+  });
+}
 
 class Spring {
   x = 0;
@@ -201,34 +248,76 @@ document.documentElement.classList.add("boot-lock");
   const mod = $("#boot-mod");
   const status = $("#boot-status");
   const bar = $("#boot-bar");
+  const brand = $("#boot-brand");
+  const product = $("#boot-product");
+  const divider = $("#boot-divider");
   let li = 0;
-  const lineTick = window.setInterval(() => {
-    li = (li + 1) % BOOT_LINES.length;
-    line.textContent = BOOT_LINES[li];
-  }, 78);
 
-  const state = { pct: 0 };
-  animate(state, {
-    pct: 100,
-    duration: motion.reduced ? 400 : 1500,
-    ease: "out(3)",
-    onUpdate: () => {
-      const p = Math.round(state.pct);
-      count.textContent = pad(p, 3);
-      mod.textContent = pad(Math.min(16, Math.floor((p / 100) * 16) + 1), 2);
-      bar.style.width = `${p}%`;
-    },
-    onComplete: () => {
-      window.clearInterval(lineTick);
-      status.textContent = "GREEN — MOUNTING";
-      line.textContent = "ALL MODULES";
-      window.setTimeout(() => {
-        pre.classList.add("exit");
-        boot();
-        window.setTimeout(() => (pre.style.display = "none"), 1050);
-      }, 260);
-    },
-  });
+  /* Phase 1: brand splash entrance (RAGESTAR + STRNG UI) */
+  if (!motion.reduced) {
+    /* RAGESTAR title reveals */
+    animate(brand, {
+      opacity: [0, 1],
+      y: [30, 0],
+      scale: [0.92, 1],
+      duration: 900,
+      ease: "out(4)",
+      delay: 150,
+    });
+    /* STRNG UI v0.1 reveals staggered */
+    animate(product, {
+      opacity: [0, 1],
+      y: [20, 0],
+      duration: 800,
+      ease: "out(3)",
+      delay: 500,
+    });
+    /* divider wipe */
+    animate(divider, {
+      opacity: [0, 1],
+      scaleX: [0, 1],
+      duration: 600,
+      ease: "out(3)",
+      delay: 700,
+    });
+  } else {
+    brand.style.opacity = "1";
+    product.style.opacity = "1";
+    divider.style.opacity = "1";
+    divider.style.transform = "scaleX(1)";
+  }
+
+  /* Phase 2: boot counter starts after brand splash settles */
+  const counterDelay = motion.reduced ? 0 : 900;
+  setTimeout(() => {
+    const lineTick = window.setInterval(() => {
+      li = (li + 1) % BOOT_LINES.length;
+      line.textContent = BOOT_LINES[li];
+    }, 78);
+
+    const state = { pct: 0 };
+    animate(state, {
+      pct: 100,
+      duration: motion.reduced ? 400 : 1400,
+      ease: "out(3)",
+      onUpdate: () => {
+        const p = Math.round(state.pct);
+        count.textContent = pad(p, 3);
+        mod.textContent = pad(Math.min(16, Math.floor((p / 100) * 16) + 1), 2);
+        bar.style.width = `${p}%`;
+      },
+      onComplete: () => {
+        window.clearInterval(lineTick);
+        status.textContent = "GREEN — MOUNTING";
+        line.textContent = "ALL MODULES";
+        window.setTimeout(() => {
+          pre.classList.add("exit");
+          boot();
+          window.setTimeout(() => (pre.style.display = "none"), 1050);
+        }, 260);
+      },
+    });
+  }, counterDelay);
 })();
 
 const SPEC_LINES = [
@@ -640,7 +729,7 @@ $$(".vmq").forEach((wrap) => {
       </span>`;
     b.addEventListener("mouseenter", () => { b.classList.add("hot"); hoverLabel.textContent = `→ ${node.id.replace("m-", "").toUpperCase()}`; scramble(b.querySelector(".rr-name"), node.name, 20); });
     b.addEventListener("mouseleave", () => { b.classList.remove("hot"); hoverLabel.textContent = "IDLE"; });
-    b.addEventListener("click", () => { scrollToId(node.id); pushStatus(`JUMP ${node.n} · ${node.name}`, "ok"); });
+    b.addEventListener("click", () => { wipeTransport(node.id); pushStatus(`JUMP ${node.n} · ${node.name} · WIPE`, "ok"); });
     rows.appendChild(b);
   });
   const io = new IntersectionObserver(
@@ -891,8 +980,8 @@ function resetChars(chars) {
 ================================================================ */
 
 $("#ft-top").addEventListener("click", () => {
-  if (motion.lenis) motion.lenis.scrollTo(0, { duration: 1.4 });
-  else window.scrollTo({ top: 0, behavior: "smooth" });
+  pushStatus("RETURNING TO ORIGIN · WIPE", "ok");
+  wipeTransport("top");
 });
 
 /* ================================================================
@@ -1106,8 +1195,8 @@ const COMMANDS = [
       pushStatus("PORTSTACK OPENED VIA PALETTE", "ok");
       return;
     }
-    scrollToId(cmd.to);
-    pushStatus(`JUMP ${cmd.n} · ${cmd.name}`, "ok");
+    wipeTransport(cmd.to);
+    pushStatus(`JUMP ${cmd.n} · ${cmd.name} · WIPE`, "ok");
   }
   input.addEventListener("input", () => filter(input.value));
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
@@ -1271,6 +1360,7 @@ async function toggleSynth() {
   updaters.push(() => { if (!synthOn || !synthNodes) return; const v = Math.min(Math.abs(motion.velocity) / 6000, 1); synthNodes.filter.frequency.setTargetAtTime(400 + v * 2400 + motion.docProgress * 900, synthCtx.currentTime, 0.25); const pitch = 55 * (1 + motion.docProgress * 0.6); synthNodes.osc1.frequency.setTargetAtTime(pitch, synthCtx.currentTime, 0.4); synthNodes.osc2.frequency.setTargetAtTime(pitch * 1.5, synthCtx.currentTime, 0.4); });
 }
 window.__toggleSynth = toggleSynth;
+window.__isSoundOn = () => synthOn;
 
 async function takeSnapshot() {
   const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1200); const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d");
@@ -1671,7 +1761,9 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     pushStatus("PORTSTACK DISMISSED", "meta");
   }
 
-  /* ---- confirm port — animate front card forward, then transport ---- */
+  /* ---- confirm port — front card flies through the camera, the teleport
+     happens while the dim still covers the page, then the overlay fades out
+     at the destination. (No wipeTransport here — the overlay IS the cover.) ---- */
   function confirmPort() {
     if (!open || busy) return;
     busy = true;
@@ -1689,37 +1781,42 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       c.style.transform = "translate3d(0, 40px, -2000px)";
       c.style.opacity = "0";
     });
-    /* dim fades to transparent quickly */
-    dim.style.transition = "opacity 0.5s ease";
-    dim.style.opacity = "0";
 
-    /* expand sections back to normal */
     const sections = $$("body > header[data-module], body > section[data-module], body > footer[data-module]");
-    animate(sections, {
-      scaleY: [0.02, 1],
-      opacity: [0.35, 1],
-      duration: 550,
-      ease: "out(4)",
-      delay: stagger(8, { from: "center" }),
-      onComplete: () => {
-        sections.forEach((s) => { s.style.transform = ""; s.style.opacity = ""; });
-      },
-    });
 
-    /* after animation, do actual scroll transport + clean state */
+    /* midpoint: teleport behind the opaque dim, then reveal the destination */
+    setTimeout(() => {
+      const el = document.getElementById(node.id);
+      if (el) {
+        if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, immediate: true, force: true });
+        else el.scrollIntoView();
+      }
+      /* sections expand at the destination, seen through the overlay fade */
+      animate(sections, {
+        scaleY: [0.02, 1],
+        opacity: [0.35, 1],
+        duration: 550,
+        ease: "out(4)",
+        delay: stagger(8, { from: "center" }),
+        onComplete: () => {
+          sections.forEach((s) => { s.style.transform = ""; s.style.opacity = ""; });
+        },
+      });
+      wrap.classList.add("dismissing");
+    }, 400);
+
+    /* after the overlay fade completes, clean state */
     setTimeout(() => {
       wrap.classList.remove("open");
+      wrap.classList.remove("dismissing");
       wrap.setAttribute("aria-hidden", "true");
       document.documentElement.classList.remove("port-lock");
       document.body.classList.remove("porting");
       open = false;
       busy = false;
       deck.style.transform = "";
-      dim.style.transition = "";
-      dim.style.opacity = "";
       cards.forEach((c) => { c.style.transitionDelay = ""; });
       lenis?.start();
-      scrollToId(node.id);
       visitedModules.add(node.id);
       /* record the jump in the trail */
       if (trail[trail.length - 1]?.name !== node.name) trail.push({ n: node.n, name: node.name });
@@ -1727,7 +1824,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       renderTrail();
       if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
       pushStatus(`PORTED → ${node.n} · ${node.name}`, "ok");
-    }, 620);
+    }, 840);
   }
 
   /* ---- MASTER loop: parallax + smooth deckPos easing + card layout ---- */
@@ -1862,7 +1959,225 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 })();
 
 /* ================================================================
-   29. CONSOLE SIGNATURE
+   29. STATEMENT MODULE (pinned typography, scroll-driven words)
+================================================================ */
+
+(function statementModule() {
+  const wrap = $("#stmt-wrap");
+  const words = $$(".stmt-word");
+  const pctEl = $("#stmt-pct");
+  let lastPct = -1;
+  updaters.push(() => {
+    const r = wrap.getBoundingClientRect();
+    if (r.top > motion.vh || r.bottom < 0) return;
+    const p = clamp01(-r.top / (r.height - motion.vh));
+    words.forEach((w, i) => {
+      /** each word maps to a slice of the progress; ~0.5 full reveal per word */
+      const wp = clamp01(p * (words.length + 1) - i * 0.8);
+      w.style.opacity = String(0.08 + 0.92 * wp);
+      w.style.transform = `translateY(${(1 - wp) * 28}px)`;
+    });
+    const pct = Math.round(p * 100);
+    if (pct !== lastPct) { lastPct = pct; pctEl.textContent = `${pad(pct, 3)}%`; }
+  });
+})();
+
+/* ================================================================
+   30. CURSOR COORDS READOUT (+ click telemetry → debug grid)
+================================================================ */
+
+(function coordsReadout() {
+  const xEl = $("#t-x");
+  const yEl = $("#t-y");
+  const tele = $("#tele-bot");
+  updaters.push(() => {
+    /* normalized -1..1 → raw device pixels */
+    const x = Math.round(((motion.spx + 1) / 2) * motion.vw);
+    const y = Math.round(((motion.spy + 1) / 2) * motion.vh);
+    xEl.textContent = pad(x, 4);
+    yEl.textContent = pad(y, 4);
+  });
+  if (tele) {
+    tele.style.cursor = "crosshair";
+    tele.addEventListener("click", () => window.__toggleDebug?.());
+  }
+})();
+
+/* ================================================================
+   31. LOCAL TIME (GMT±X) next to the UTC clock
+================================================================ */
+
+(function localTime() {
+  const el = $("#hud-local");
+  if (!el) return;
+  const tick = () => {
+    const d = new Date();
+    const off = -d.getTimezoneOffset() / 60;
+    const sign = off >= 0 ? "+" : "-";
+    el.textContent = `GMT${sign}${Math.abs(off)} ${pad(d.getHours(), 2)}:${pad(d.getMinutes(), 2)}`;
+  };
+  tick();
+  window.setInterval(tick, 1000);
+})();
+
+/* ================================================================
+   32. AMBIENT SOUND BUTTON (+ level indicator)
+================================================================ */
+
+(function soundButton() {
+  const btn = $("#sound-open");
+  const label = $("#snd-label");
+  btn.addEventListener("click", () => window.__toggleSynth?.());
+  /* poll sound state — toggleSynth is async */
+  window.setInterval(() => {
+    const on = window.__isSoundOn?.() ?? false;
+    btn.classList.toggle("on", on);
+    label.textContent = on ? "SOUND ON" : "SOUND OFF";
+  }, 300);
+})();
+
+/* ================================================================
+   33. VELOCITY → VARIABLE FONT WEIGHT
+================================================================ */
+
+(function velocityWeight() {
+  if (motion.reduced) return;
+  updaters.push(() => {
+    const v = Math.min(Math.abs(motion.velocity) / 6000, 1);
+    const w = 300 + v * 400;
+    $$(".velo-wght").forEach((el) => el.style.setProperty("--velo-wght", String(Math.round(w))));
+  });
+})();
+
+/* ================================================================
+   34. SIGNATURE DRAW — stroke-dashoffset, staggered, in-view trigger
+================================================================ */
+
+(function signatureDraw() {
+  const svg = $("#sig-draw");
+  const paths = Array.from(svg.querySelectorAll(".sig-path"));
+  let played = false;
+  function draw() {
+    if (played) return;
+    played = true;
+    paths.forEach((p) => {
+      const len = p.getTotalLength();
+      p.style.strokeDasharray = String(len);
+      p.style.strokeDashoffset = String(len);
+    });
+    if (motion.reduced) {
+      paths.forEach((p) => { p.style.strokeDashoffset = "0"; });
+      return;
+    }
+    paths.forEach((p, i) => {
+      const len = p.getTotalLength();
+      animate(p, {
+        strokeDashoffset: [len, 0],
+        duration: 900,
+        ease: "inOut(2)",
+        delay: i * 180,
+      });
+    });
+  }
+  new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) draw(); }), { rootMargin: "-20% 0px" }).observe(svg);
+})();
+
+/* ================================================================
+   35. REDACTED / CLASSIFIED BLOCK (passcode gate)
+================================================================ */
+
+(function redacted() {
+  const openBtn = $("#redact-open");
+  const field = $("#redact-field");
+  const input = $("#redact-input");
+  const revealed = $("#redact-revealed");
+  const CODES = new Set(["v0.1", "0.1", "01", "strng", "strngui"]);
+  const KEY = "declassified";
+
+  function reveal(fromSave = false) {
+    openBtn.classList.add("hidden");
+    field.classList.add("hidden");
+    revealed.classList.remove("hidden");
+    if (!fromSave) pushStatus("ACCESS GRANTED · DOCUMENT DECLASSIFIED", "ok");
+    localStorage.setItem(KEY, "1");
+  }
+  if (localStorage.getItem(KEY) === "1") {
+    reveal(true);
+    return;
+  }
+  openBtn.addEventListener("click", () => {
+    openBtn.classList.add("hidden");
+    field.classList.remove("hidden");
+    input.focus();
+    pushStatus("ACCESS CODE REQUIRED", "warn");
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const code = input.value.trim().toLowerCase();
+      if (CODES.has(code)) { reveal(); }
+      else {
+        input.value = "";
+        input.style.borderColor = "#ff4d4d";
+        pushStatus("ACCESS DENIED · TRY AGAIN", "warn");
+        setTimeout(() => (input.style.borderColor = ""), 600);
+      }
+    } else if (e.key === "Escape") {
+      field.classList.add("hidden");
+      openBtn.classList.remove("hidden");
+    }
+    e.stopPropagation();
+  });
+})();
+
+/* ================================================================
+   36. FOREGROUND INK TRAIL (cursor smear, screen-blend overlay)
+================================================================ */
+
+(function inkTrail() {
+  if (motion.reduced) return;
+  const canvas = $("#ink-trail");
+  const ctx = canvas.getContext("2d");
+  let w = 0, h = 0;
+  const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
+  resize();
+  window.addEventListener("resize", resize);
+
+  const blobs = [];
+  let accent = [200, 255, 46];
+  /* sync accent from the css var each ~1s */
+  window.setInterval(() => {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue("--acid-rgb");
+    if (raw) accent = raw.trim().split(" ").map(Number);
+  }, 1000);
+
+  window.addEventListener("pointermove", (e) => {
+    const v = Math.min(Math.abs(motion.pointerV) / 4000, 1);
+    const r = 6 + v * 26;
+    blobs.push({ x: e.clientX + (Math.random() - 0.5) * 8, y: e.clientY + (Math.random() - 0.5) * 8, r, life: 1, decay: 1.4 + Math.random() });
+    if (blobs.length > 48) blobs.shift();
+  });
+
+  updaters.push((dt) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = blobs.length - 1; i >= 0; i--) {
+      const b = blobs[i];
+      b.life -= b.decay * dt;
+      if (b.life <= 0) { blobs.splice(i, 1); continue; }
+      const a = b.life * 0.13;
+      const rad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * (2 - b.life));
+      rad.addColorStop(0, `rgba(${accent[0]},${accent[1]},${accent[2]},${a})`);
+      rad.addColorStop(1, `rgba(${accent[0]},${accent[1]},${accent[2]},0)`);
+      ctx.fillStyle = rad;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * (2 - b.life), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+})();
+
+/* ================================================================
+   37. CONSOLE SIGNATURE
 ================================================================ */
 
 (function signature() {
