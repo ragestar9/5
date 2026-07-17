@@ -1250,16 +1250,40 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   /* portstack only ports to real destinations (all MODULES) */
   const NODES = MODULES.slice();
   totalEl.textContent = `${NODES.length} NODES`;
+  const trailEl = $("#port-trail");
+  const filterEl = $("#port-filter");
 
   let open = false;
   let selected = 0;
   let cards = [];
   let spineRows = [];
   let scrollAccum = 0;
+  let filterStr = "";
+  let lastSelected = -1;
+  let dragRot = 0;
+  let nameJob = null;
+  const trail = [];
+
+  /* ---- per-module preview kind ---- */
+  const PREVIEW_KIND = {
+    "m-reveal": "bars", "m-parallax": "wire", "m-progress": "arc", "m-lerp": "wave",
+    "m-glide": "wave", "m-cursor": "wire", "m-magnetic": "arc", "m-spotlight": "arc",
+    "m-webgl": "wire", "m-impulse": "wave", "m-drag": "bars", "m-split": "glyph",
+    "m-mask": "wire", "m-sequence": "bars", "m-diag": "wave", "m-marquee": "wave",
+    "m-registry": "bars", "top": "wire", "m-outro": "glyph", "footer": "glyph",
+  };
+  function previewHTML(node) {
+    const kind = PREVIEW_KIND[node.id] || "bars";
+    if (kind === "bars") return `<div class="pv-bars">${Array.from({ length: 8 }).map(() => "<span></span>").join("")}</div>`;
+    if (kind === "wire") return `<div class="pv-wire"></div>`;
+    if (kind === "arc") return `<div class="pv-arc"><svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16" fill="none" stroke-width="2"/><circle class="val" cx="20" cy="20" r="16" fill="none" stroke-width="2" stroke-dasharray="100" stroke-dashoffset="35" transform="rotate(-90 20 20)"/></svg></div>`;
+    if (kind === "wave") return `<div class="pv-wave">${Array.from({ length: 14 }).map((_, i) => `<span style="height:${20 + Math.abs(Math.sin(i * 0.9)) * 70}%"></span>`).join("")}</div>`;
+    if (kind === "glyph") return `<div class="pv-glyph">${"▓▒░<>/#*+=-ΣΩΦ".repeat(4)}</div>`;
+    return "";
+  }
 
   /* ---- build cards + spine (once) ---- */
   function build() {
-    /* cards */
     deck.innerHTML = "";
     cards = NODES.map((node, i) => {
       const card = document.createElement("div");
@@ -1274,8 +1298,9 @@ $("#ft-export")?.addEventListener("click", exportJSON);
           <div class="port-card-name">${node.name}</div>
           <div class="port-card-meta mt-2">${node.meta}</div>
         </div>
-        <div class="port-card-preview">${Array.from({ length: 8 }).map(() => "<span></span>").join("")}</div>`;
-      card.addEventListener("click", () => {
+        <div class="port-card-preview">${previewHTML(node)}</div>`;
+      card.addEventListener("click", (e) => {
+        e.stopPropagation();
         if (i === selected) confirmPort();
         else select(i);
       });
@@ -1283,15 +1308,11 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       return card;
     });
 
-    /* spine */
     spineWrap.innerHTML = "";
     spineRows = NODES.map((node, i) => {
       const row = document.createElement("div");
       row.className = "port-spine-row";
-      row.innerHTML = `
-        <span>${node.n}</span>
-        <span class="port-spine-bar"></span>
-        <span>${node.name}</span>`;
+      row.innerHTML = `<span>${node.n}</span><span class="port-spine-bar"></span><span>${node.name}</span>`;
       row.addEventListener("click", () => select(i));
       row.addEventListener("dblclick", () => { select(i); confirmPort(); });
       spineWrap.appendChild(row);
@@ -1299,22 +1320,42 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     });
   }
 
-  /* ---- card 3D layout — Z-depth stack ---- */
+  /* ---- filter matching ---- */
+  function matches(i) {
+    if (!filterStr) return true;
+    const n = NODES[i];
+    return (n.name + " " + n.meta + " " + n.n).toLowerCase().includes(filterStr.toLowerCase());
+  }
+  function nextVisible(from, dir) {
+    let i = from;
+    for (let step = 0; step < NODES.length; step++) {
+      i += dir;
+      if (i < 0 || i > NODES.length - 1) return from;
+      if (matches(i)) return i;
+    }
+    return from;
+  }
+
+  /* ---- diagonal cinematic cascade layout ---- */
   function layoutCards() {
     cards.forEach((card, i) => {
       const offset = i - selected;
       const abs = Math.abs(offset);
-      /* frontmost sharp, others recede into Z */
-      const z = -abs * 240 - (offset > 0 ? 40 : 0);
-      const x = offset * 60;
-      const y = offset * 24;
-      const rot = offset * -6;
-      const scale = 1 - abs * 0.08;
-      const opacity = abs > 6 ? 0 : Math.max(0.05, 1 - abs * 0.14);
+      const dim = filterStr && !matches(i);
+      /* diagonal filmstrip: cards cascade up-and-right into depth */
+      const x = offset * 82;
+      const y = offset * -60;
+      const z = -abs * 210;
+      const rot = offset * -3;
+      const scale = Math.max(0.4, 1 - abs * 0.07);
+      let opacity = abs > 7 ? 0 : Math.max(0.06, 1 - abs * 0.13);
+      if (dim) opacity *= 0.12;
       card.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rot}deg) scale(${scale})`;
       card.style.opacity = String(opacity);
       card.style.zIndex = String(1000 - abs);
       card.classList.toggle("front", i === selected);
+      card.classList.toggle("dof", abs >= 3 && !dim);
+      card.classList.toggle("filtered-out", dim);
       const node = NODES[i];
       const visited = visitedModules.has(node.id);
       card.classList.toggle("visited", visited);
@@ -1325,30 +1366,34 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       else if (visited) { statusEl.classList.add("on"); labelEl.textContent = "VISITED"; }
       else { statusEl.classList.remove("on"); labelEl.textContent = "UNVISITED"; }
     });
-    /* spine rows */
     spineRows.forEach((row, i) => {
       row.classList.toggle("visited", visitedModules.has(NODES[i].id));
       row.classList.toggle("current", i === currentModuleIdx);
+      row.style.opacity = filterStr && !matches(i) ? "0.25" : "1";
       row.style.background = i === selected ? "rgba(200,255,46,0.06)" : "transparent";
     });
   }
 
-  /* ---- update selection readout ---- */
+  /* ---- selection readout (with glyph scramble on change) ---- */
   function updateReadout() {
     const node = NODES[selected];
     selIdx.textContent = node.n;
-    selName.textContent = node.name;
+    if (selected !== lastSelected) {
+      if (nameJob) { try { nameJob.cancel?.(); } catch (_) {} }
+      nameJob = scramble(selName, node.name, 16);
+      lastSelected = selected;
+    } else {
+      selName.textContent = node.name;
+    }
     selMeta.textContent = node.meta;
     const visited = visitedModules.has(node.id);
-    selStatus.textContent = node.id === MODULES[currentModuleIdx]?.id ? "YOU ARE HERE" : visited ? "VISITED" : "UNVISITED";
-    selStatus.className = `tick-label ${node.id === MODULES[currentModuleIdx]?.id || visited ? "text-acid" : "text-line2"}`;
+    const here = node.id === MODULES[currentModuleIdx]?.id;
+    selStatus.textContent = here ? "YOU ARE HERE" : visited ? "VISITED" : "UNVISITED";
+    selStatus.className = `tick-label ${here || visited ? "text-acid" : "text-line2"}`;
     confirmTag.textContent = `${node.n} · ${node.name}`;
-    /* FROM readout — where the user is jumping from */
     const from = MODULES[currentModuleIdx] ?? MODULES[0];
     fromName.textContent = from.name;
-    const dwellMs = dwellData.get(from.id) || 0;
-    fromDwell.textContent = (dwellMs / 1000).toFixed(1) + "s";
-    /* visited count */
+    fromDwell.textContent = ((dwellData.get(from.id) || 0) / 1000).toFixed(1) + "s";
     const v = NODES.filter((n) => visitedModules.has(n.id)).length;
     visitedEl.textContent = `${pad(v, 2)} / ${pad(NODES.length, 2)} VISITED`;
   }
@@ -1359,6 +1404,30 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     updateReadout();
   }
 
+  /* ---- filter input ---- */
+  function applyFilter() {
+    if (filterStr) { filterEl.textContent = `/ ${filterStr.toUpperCase()}`; filterEl.classList.remove("hidden"); }
+    else { filterEl.textContent = ""; filterEl.classList.add("hidden"); }
+    if (filterStr && !matches(selected)) {
+      const first = NODES.findIndex((_, i) => matches(i));
+      if (first >= 0) selected = first;
+    }
+    layoutCards();
+    updateReadout();
+  }
+
+  /* ---- trail breadcrumb ---- */
+  function renderTrail() {
+    if (!trail.length) { trailEl.classList.add("hidden"); return; }
+    trailEl.classList.remove("hidden");
+    const recent = trail.slice(-5);
+    trailEl.innerHTML = recent.map((t, i) => {
+      const head = i === recent.length - 1 ? " head" : "";
+      const sep = i < recent.length - 1 ? '<span class="port-trail-sep">→</span>' : "";
+      return `<span class="port-trail-item${head}">${t.n} ${t.name}</span>${sep}`;
+    }).join("");
+  }
+
   /* ---- summon / dismiss ---- */
   function summon() {
     if (open) return;
@@ -1367,9 +1436,15 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     lenis?.stop();
     document.documentElement.classList.add("port-lock");
     document.body.classList.add("porting");
-    /* start at current section */
+    /* reset filter + selection */
+    filterStr = "";
+    filterEl.classList.add("hidden");
+    lastSelected = -1;
     selected = Math.max(0, currentModuleIdx);
+    /* seed trail with current location if empty */
+    if (!trail.length) { const cur = MODULES[currentModuleIdx] ?? MODULES[0]; trail.push({ n: cur.n, name: cur.name }); }
     build();
+    renderTrail();
     wrap.classList.add("open");
     wrap.setAttribute("aria-hidden", "false");
     layoutCards();
@@ -1479,23 +1554,38 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       document.documentElement.classList.remove("port-lock");
       document.body.classList.remove("porting");
       open = false;
+      deck.style.transform = "";
       lenis?.start();
       scrollToId(node.id);
       visitedModules.add(node.id);
+      /* record the jump in the trail */
+      if (trail[trail.length - 1]?.name !== node.name) trail.push({ n: node.n, name: node.name });
+      if (trail.length > 8) trail.shift();
+      renderTrail();
       pushStatus(`PORTED → ${node.n} · ${node.name}`, "ok");
     }, 620);
   }
+
+  /* ---- pointer parallax + idle drift (only while open) ---- */
+  updaters.push((_dt, t) => {
+    if (!open) return;
+    const drift = Math.sin(t * 0.4) * 3;
+    const px = motion.spx * 10;
+    const py = motion.spy * -7;
+    deck.style.transform = `rotateY(${-14 + px + dragRot}deg) rotateX(${5 + py + drift}deg)`;
+  });
 
   /* ---- input handlers active only when open ---- */
   wrap.addEventListener("wheel", (e) => {
     if (!open) return;
     e.preventDefault();
     scrollAccum += e.deltaY;
-    const threshold = 80;
+    const threshold = 70;
     if (Math.abs(scrollAccum) >= threshold) {
       const step = scrollAccum > 0 ? 1 : -1;
       scrollAccum = 0;
-      select(selected + step);
+      const active = filterStr ? nextVisible(selected, step) : selected + step;
+      select(active);
     }
   }, { passive: false });
 
@@ -1508,20 +1598,70 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     confirmPort();
   });
 
+  /* ---- drag-to-surf with momentum ---- */
+  const stage = $("#port-stage");
+  let dragging = false, dragStartX = 0, dragAccum = 0, lastDragX = 0, dragVel = 0, lastDragT = 0;
+  stage.addEventListener("pointerdown", (e) => {
+    if (!open) return;
+    if (e.target.closest(".port-card") && e.target.closest(".port-card").classList.contains("front")) return;
+    dragging = true;
+    dragStartX = lastDragX = e.clientX;
+    dragAccum = 0; dragVel = 0; lastDragT = performance.now();
+    wrap.classList.add("dragging");
+    stage.setPointerCapture?.(e.pointerId);
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastDragX;
+    const now = performance.now();
+    const dt = Math.max((now - lastDragT) / 1000, 1 / 240);
+    dragVel = dx / dt;
+    lastDragT = now;
+    lastDragX = e.clientX;
+    dragAccum += dx;
+    dragRot = Math.max(-14, Math.min(14, (e.clientX - dragStartX) / 20));
+    const stepPx = 70;
+    if (Math.abs(dragAccum) >= stepPx) {
+      const step = dragAccum > 0 ? -1 : 1; /* drag right → previous */
+      dragAccum = 0;
+      const active = filterStr ? nextVisible(selected, step) : selected + step;
+      select(active);
+    }
+  });
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    wrap.classList.remove("dragging");
+    stage.releasePointerCapture?.(e.pointerId);
+    /* momentum: extra steps from release velocity */
+    const extra = Math.round(Math.max(-4, Math.min(4, -dragVel / 900)));
+    if (extra) select(filterStr ? nextVisible(selected, Math.sign(extra)) : selected + extra);
+    /* ease dragRot back toward neutral (parallax updater renders it) */
+    const rotState = { r: dragRot };
+    animate(rotState, { r: 0, duration: 600, ease: "out(3)", onUpdate: () => { dragRot = rotState.r; } });
+  };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+
   /* keyboard when open */
   window.addEventListener("keydown", (e) => {
     if (!open) return;
-    if (e.key === "Escape") { e.preventDefault(); dismiss(); return; }
-    if (e.key === "Enter") { e.preventDefault(); confirmPort(); return; }
-    if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); select(selected + 1); return; }
-    if (e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); select(selected - 1); return; }
-    if (e.key === "Home") { e.preventDefault(); select(0); return; }
-    if (e.key === "End") { e.preventDefault(); select(NODES.length - 1); return; }
-    /* number keys 1..9,0 jump to relative index in stack */
-    if (/^[0-9]$/.test(e.key)) {
-      e.preventDefault();
-      const n = e.key === "0" ? 9 : Number(e.key) - 1;
-      select(n);
+    if (e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation();
+      if (filterStr) { filterStr = ""; applyFilter(); return; } /* first Esc clears filter */
+      dismiss(); return;
+    }
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); confirmPort(); return; }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); select(filterStr ? nextVisible(selected, 1) : selected + 1); return; }
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); select(filterStr ? nextVisible(selected, -1) : selected - 1); return; }
+    if (e.key === "Home") { e.preventDefault(); e.stopPropagation(); select(0); return; }
+    if (e.key === "End") { e.preventDefault(); e.stopPropagation(); select(NODES.length - 1); return; }
+    if (e.key === "Backspace") { e.preventDefault(); e.stopPropagation(); filterStr = filterStr.slice(0, -1); applyFilter(); return; }
+    /* printable char → type-to-filter */
+    if (e.key.length === 1 && /[a-z0-9 +]/i.test(e.key)) {
+      e.preventDefault(); e.stopPropagation();
+      filterStr += e.key;
+      applyFilter();
       return;
     }
   }, true); /* capture so it beats page hotkeys */

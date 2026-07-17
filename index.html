@@ -1034,14 +1034,19 @@
           PORTSTACK · <span class="text-acid">ACTIVE</span>
           <span class="text-line2">·</span>
           <span id="port-total" class="text-fog">20 NODES</span>
+          <span id="port-filter" class="hidden text-acid"></span>
         </span>
         <span class="tick-label hidden text-fog md:block">
-          <span class="text-bone">SCROLL</span> · surf  ·  
+          <span class="text-bone">SCROLL / DRAG</span> · surf  ·  
           <span class="text-bone">← →</span> · step  ·  
+          <span class="text-bone">A–Z</span> · filter  ·  
           <span class="text-bone">↵</span> · port  ·  
           <span class="text-bone">ESC</span> · dismiss
         </span>
       </div>
+
+      <!-- port trail breadcrumb -->
+      <div id="port-trail" class="pointer-events-none absolute left-4 top-16 z-10 hidden max-w-[40vw] flex-wrap items-center gap-2 md:flex md:left-8"></div>
 
       <!-- 3D deck stage -->
       <div id="port-stage" class="absolute inset-0 flex items-center justify-center" style="perspective: 1600px">

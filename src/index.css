@@ -625,8 +625,8 @@ body.porting > footer[data-module] {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: min(56vw, 620px);
-  height: min(46vh, 400px);
+  width: min(46vw, 500px);
+  height: min(52vh, 420px);
   border: 1px solid var(--color-line2);
   background: linear-gradient(180deg, var(--color-panel) 0%, var(--color-ink2) 100%);
   padding: 24px;
@@ -637,6 +637,22 @@ body.porting > footer[data-module] {
   will-change: transform, opacity;
   transform-style: preserve-3d;
   backface-visibility: hidden;
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.45s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    filter 0.45s ease;
+}
+/* deep cards blur slightly for depth-of-field */
+.port-card.dof {
+  filter: blur(2px);
+}
+#portstack.dragging .port-card {
+  transition: opacity 0.3s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+.port-card.filtered-out {
+  pointer-events: none;
 }
 .port-card.front {
   border-color: var(--color-acid);
@@ -710,24 +726,57 @@ body.porting > footer[data-module] {
   margin-top: 20px;
   border-top: 1px solid var(--color-line);
   padding-top: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* bars preview (default) */
+.pv-bars {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 3px;
-}
-.port-card-preview span {
   height: 100%;
-  background: var(--color-line);
 }
-.port-card.visited .port-card-preview span:nth-child(-n+3) {
-  background: var(--color-acid);
+.pv-bars span { height: 100%; background: var(--color-line); transition: background 0.3s ease, opacity 0.3s ease; }
+.port-card.visited .pv-bars span:nth-child(-n+3) { background: var(--color-acid); }
+.port-card.front .pv-bars span { background: var(--color-acid); opacity: 0.18; }
+.port-card.front .pv-bars span:nth-child(-n+3) { opacity: 1; }
+
+/* wireframe preview */
+.pv-wire {
+  height: 100%;
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.5;
 }
-.port-card.front .port-card-preview span {
-  background: var(--color-acid);
-  opacity: 0.15;
+.port-card.front .pv-wire { opacity: 1; background-image: linear-gradient(rgba(200,255,46,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(200,255,46,0.35) 1px, transparent 1px); }
+
+/* arc / progress preview */
+.pv-arc { display: flex; align-items: center; justify-content: center; height: 100%; }
+.pv-arc svg { width: 64px; height: 64px; }
+.pv-arc circle.track { stroke: var(--color-line); }
+.pv-arc circle.val { stroke: var(--color-fog); }
+.port-card.front .pv-arc circle.val { stroke: var(--color-acid); }
+
+/* glyph preview */
+.pv-glyph {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  color: var(--color-line2);
+  height: 100%;
+  overflow: hidden;
+  word-break: break-all;
 }
-.port-card.front .port-card-preview span:nth-child(-n+3) {
-  opacity: 1;
-}
+.port-card.front .pv-glyph { color: var(--color-fog); }
+
+/* wave preview */
+.pv-wave { display: flex; align-items: center; gap: 2px; height: 100%; }
+.pv-wave span { flex: 1; background: var(--color-line); align-self: center; transition: background 0.3s; }
+.port-card.front .pv-wave span { background: var(--color-acid); opacity: 0.55; }
 
 /* spine — compressed rows shown at bottom of overlay */
 .port-spine-row {
@@ -762,6 +811,28 @@ body.porting > footer[data-module] {
 .port-spine-row.visited .port-spine-bar {
   opacity: 1;
 }
+
+/* port trail breadcrumb */
+.port-trail-item {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-fog);
+  border: 1px solid var(--color-line);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.port-trail-item.head {
+  color: var(--color-ink);
+  background: var(--color-acid);
+  border-color: var(--color-acid);
+}
+.port-trail-sep { color: var(--color-line2); font-size: 10px; }
+
+/* deck grab cursor */
+#port-stage { cursor: grab; }
+#portstack.dragging #port-stage { cursor: grabbing; }
 
 /* prevent scrollbar chrome from jumping when portstack takes over */
 html.port-lock {
