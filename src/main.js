@@ -89,6 +89,8 @@ function scramble(el, str, speed = 22) {
 
 /* master rAF registry */
 const updaters = [];
+/* three.js materials that follow the theme accent */
+const themedMaterials = [];
 let fpsNow = 0;
 let booted = false;
 
@@ -505,6 +507,7 @@ function gateVisibility(el, cb) {
   const geo = new THREE.IcosahedronGeometry(1.72, 3);
   const base = Float32Array.from(geo.attributes.position.array);
   const core = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xc8ff2e, wireframe: true, transparent: true, opacity: 0.62 }));
+  themedMaterials.push(core.material);
   const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe6e6ea, size: 0.028, transparent: true, opacity: 0.85, sizeAttenuation: true }));
   const occl = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x08080a, transparent: true, opacity: 0.55, depthWrite: false }));
   occl.scale.setScalar(0.985);
@@ -519,6 +522,7 @@ function gateVisibility(el, cb) {
   }
   shellGeo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
   const shell = new THREE.Points(shellGeo, new THREE.PointsMaterial({ color: 0xc8ff2e, size: 0.02, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+  themedMaterials.push(shell.material);
   group.add(shell);
   const mkRing = (radius, tilt, opacity) => {
     const p = [];
@@ -785,6 +789,7 @@ $$(".vmq").forEach((wrap) => {
   const holder = $("#gl-orbit"); const { renderer, scene, camera } = makeRenderer(holder, 6.4);
   scene.fog = new THREE.Fog(0x08080a, 6, 12); const rig = new THREE.Group(); scene.add(rig);
   const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(1.05, 0.34, 220, 26), new THREE.MeshBasicMaterial({ color: 0xc8ff2e, wireframe: true, transparent: true, opacity: 0.6 }));
+  themedMaterials.push(knot.material);
   rig.add(knot);
   const satGeo = new THREE.OctahedronGeometry(0.14, 0); const sats = [];
   for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(satGeo, new THREE.MeshBasicMaterial({ color: 0xe6e6ea, wireframe: true, transparent: true, opacity: 0.9 })); rig.add(m); sats.push(m); }
@@ -902,9 +907,9 @@ $("#ft-top").addEventListener("click", () => {
   setSize(); host.appendChild(renderer.domElement);
   const scene = new THREE.Scene(); const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }, uMouse: { value: new THREE.Vector2(0, 0) }, uVel: { value: 0 }, uProg: { value: 0 }, uOver: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }, uMouse: { value: new THREE.Vector2(0, 0) }, uVel: { value: 0 }, uProg: { value: 0 }, uOver: { value: 0 }, uAcid: { value: new THREE.Color(0.784, 1.0, 0.18) } },
     vertexShader: `void main(){gl_Position=vec4(position,1.0);}`,
-    fragmentShader: `precision mediump float;uniform float uTime;uniform vec2 uRes;uniform vec2 uMouse;uniform float uVel;uniform float uProg;uniform float uOver;float hash(vec2 p){return fract(sin(dot(p,vec2(41.13,289.7)))*43758.5453);}float vnoise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);vec2 u=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);}float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}void main(){vec2 uv=(gl_FragCoord.xy-0.5*uRes)/min(uRes.x,uRes.y);vec2 m=uMouse*0.5;float t=uTime*0.08;vec2 q=uv*1.4+vec2(t,t*0.6);float f=fbm(q+fbm(q+vec2(uProg*2.0,-t))*1.2);vec2 g=uv*22.0;vec2 gi=fract(g)-0.5;float d=1.0-smoothstep(0.02,0.10,length(gi));d*=0.35+0.4*f;float ptr=exp(-length(uv-m)*3.5)*0.55;float streak=smoothstep(0.85,1.0,f)*clamp(abs(uVel)/6000.0,0.0,1.0);vec3 acid=vec3(0.784,1.000,0.180);vec3 col=vec3(0.03,0.03,0.04);col+=acid*(d*0.28+ptr*0.9+streak*0.6);col+=vec3(0.06,0.06,0.08)*f;if(uOver>0.5){float h=fract(t*0.4+f*0.6);vec3 r=0.5+0.5*cos(6.2831*(h+vec3(0.0,0.33,0.67)));col=mix(col,col*r*1.6,0.55);}col*=0.85-0.35*length(uv)*0.6;gl_FragColor=vec4(col,1.0);}`,
+    fragmentShader: `precision mediump float;uniform float uTime;uniform vec2 uRes;uniform vec2 uMouse;uniform float uVel;uniform float uProg;uniform float uOver;uniform vec3 uAcid;float hash(vec2 p){return fract(sin(dot(p,vec2(41.13,289.7)))*43758.5453);}float vnoise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);vec2 u=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);}float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}void main(){vec2 uv=(gl_FragCoord.xy-0.5*uRes)/min(uRes.x,uRes.y);vec2 m=uMouse*0.5;float t=uTime*0.08;vec2 q=uv*1.4+vec2(t,t*0.6);float f=fbm(q+fbm(q+vec2(uProg*2.0,-t))*1.2);vec2 g=uv*22.0;vec2 gi=fract(g)-0.5;float d=1.0-smoothstep(0.02,0.10,length(gi));d*=0.35+0.4*f;float ptr=exp(-length(uv-m)*3.5)*0.55;float streak=smoothstep(0.85,1.0,f)*clamp(abs(uVel)/6000.0,0.0,1.0);vec3 acid=uAcid;vec3 col=vec3(0.03,0.03,0.04);col+=acid*(d*0.28+ptr*0.9+streak*0.6);col+=vec3(0.06,0.06,0.08)*f;if(uOver>0.5){float h=fract(t*0.4+f*0.6);vec3 r=0.5+0.5*cos(6.2831*(h+vec3(0.0,0.33,0.67)));col=mix(col,col*r*1.6,0.55);}col*=0.85-0.35*length(uv)*0.6;gl_FragColor=vec4(col,1.0);}`,
   });
   scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
   window.addEventListener("resize", () => { setSize(); mat.uniforms.uRes.value.set(window.innerWidth, window.innerHeight); });
@@ -915,6 +920,82 @@ $("#ft-top").addEventListener("click", () => {
     mat.uniforms.uOver.value = document.body.classList.contains("overdrive") ? 1 : 0;
     renderer.render(scene, cam);
   });
+  /* expose so the theme switcher can retint the shader */
+  window.__setShaderAcid = (r, g, b) => { mat.uniforms.uAcid.value.setRGB(r / 255, g / 255, b / 255); };
+})();
+
+/* ================================================================
+   12b. PIXEL-ARC BACKGROUND (theme-tinted, canvas 2D)
+================================================================ */
+
+(function pixelArc() {
+  const canvas = $("#arc-layer");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const pixelSize = motion.touch ? 12 : 9;
+  let width = 0, height = 0;
+  /* current theme accent, updated by theme switcher */
+  const acid = { r: 200, g: 255, b: 46 };
+  window.__setArcAcid = (r, g, b) => { acid.r = r; acid.g = g; acid.b = b; };
+
+  function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  let t = 0;
+  let raf = 0;
+  function render() {
+    /* base dark fill */
+    ctx.fillStyle = "#030308";
+    ctx.fillRect(0, 0, width, height);
+
+    if (document.body.classList.contains("no-fx")) { raf = requestAnimationFrame(render); return; }
+
+    const cols = Math.ceil(width / pixelSize);
+    const rows = Math.ceil(height / pixelSize);
+    /* arc lives lower on the page; scroll progress lifts it slightly */
+    const arcCenterY = height * (0.78 - motion.docProgress * 0.12);
+    const arcDrop = height * 0.9;
+    const thickness = height * 0.36;
+    /* velocity spreads the band */
+    const velBoost = Math.min(Math.abs(motion.velocity) / 6000, 1) * 0.12;
+
+    for (let x = 0; x < cols; x++) {
+      const px = x * pixelSize;
+      const nx = (px / width) * 2 - 1;
+      const curveY = arcCenterY + Math.pow(Math.abs(nx), 1.8) * arcDrop;
+      const edgeFade = 1 - Math.pow(Math.abs(nx), 2.5);
+      if (edgeFade <= 0) continue;
+      for (let y = 0; y < rows; y++) {
+        const py = y * pixelSize;
+        const distToCurve = Math.abs(py - curveY);
+        let intensity = Math.max(0, 1 - distToCurve / (thickness * (1 + velBoost)));
+        if (intensity <= 0.01) continue;
+        const wave1 = Math.sin(nx * 4 - t * 1.5) * 0.1;
+        const wave2 = Math.cos(py * 0.01 + t) * 0.1;
+        intensity = Math.max(0, Math.min(1, intensity + wave1 + wave2)) * edgeFade;
+        if (intensity <= 0.02) continue;
+        const coreStr = Math.pow(intensity, 3);
+        const midStr = Math.pow(intensity, 1.5);
+        /* blend theme accent into a bright core */
+        const r = Math.floor(acid.r * 0.16 * intensity + 235 * coreStr);
+        const g = Math.floor(acid.g * 0.16 * intensity + 235 * coreStr);
+        const b = Math.floor(acid.b * 0.9 * midStr + 35 * coreStr);
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.globalAlpha = intensity;
+        ctx.fillRect(px, py, pixelSize - 1, pixelSize - 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+    t += motion.reduced ? 0 : 0.02;
+    raf = requestAnimationFrame(render);
+  }
+  render();
+  void raf;
 })();
 
 /* ================================================================
@@ -1093,15 +1174,41 @@ const COMMANDS = [
    18–26. THEME, FOCUS, IDLE, HERO SPARKS, DWELL, DEBUG, SYNTH, SNAP, EXPORT
 ================================================================ */
 
-const THEMES = ["acid", "cyan", "magenta", "amber"];
-const THEME_LABELS = { acid: "ACID GREEN", cyan: "PLASMA CYAN", magenta: "SIGNAL MAGENTA", amber: "SIGNAL AMBER" };
-let currentTheme = localStorage.getItem("theme") || "acid";
+/* central theme registry — one source of truth for CSS, shader + pixel arc */
+const THEME_REGISTRY = {
+  acid:    { label: "ACID GREEN",     rgb: [200, 255, 46] },
+  cyan:    { label: "PLASMA CYAN",    rgb: [92, 225, 255] },
+  magenta: { label: "SIGNAL MAGENTA", rgb: [255, 92, 214] },
+  amber:   { label: "SIGNAL AMBER",   rgb: [255, 184, 77] },
+  nexus:   { label: "NEXUS BLUE",     rgb: [106, 106, 255] },
+  mono:    { label: "MONO WHITE",     rgb: [230, 230, 234] },
+};
+const THEMES = Object.keys(THEME_REGISTRY);
+const THEME_LABELS = Object.fromEntries(THEMES.map((k) => [k, THEME_REGISTRY[k].label]));
+let currentTheme = THEME_REGISTRY[localStorage.getItem("theme")] ? localStorage.getItem("theme") : "acid";
 document.body.dataset.theme = currentTheme;
 (function themes() {
   const swatches = $$(".theme-swatch"), wrap = $("#theme-swatches"); wrap.classList.remove("hidden"); wrap.classList.add("md:flex");
-  function apply(name) { currentTheme = name; document.body.dataset.theme = name; localStorage.setItem("theme", name); swatches.forEach((s) => s.classList.toggle("on", s.dataset.theme === name)); pushStatus(`THEME · ${THEME_LABELS[name]}`, "meta"); }
-  swatches.forEach((s) => s.addEventListener("click", () => apply(s.dataset.theme))); apply(currentTheme);
+  function apply(name) {
+    if (!THEME_REGISTRY[name]) name = "acid";
+    currentTheme = name;
+    document.body.dataset.theme = name;
+    localStorage.setItem("theme", name);
+    swatches.forEach((s) => s.classList.toggle("on", s.dataset.theme === name));
+    /* propagate accent to every subsystem */
+    const [r, g, b] = THEME_REGISTRY[name].rgb;
+    window.__setShaderAcid?.(r, g, b);
+    window.__setArcAcid?.(r, g, b);
+    /* retint every registered three.js material */
+    themedMaterials.forEach((m) => { if (m && m.color) m.color.setRGB(r / 255, g / 255, b / 255); });
+    /* also set a runtime CSS var in case any inline rgb() needs it */
+    document.documentElement.style.setProperty("--acid-rgb", `${r} ${g} ${b}`);
+    pushStatus(`THEME · ${THEME_LABELS[name]}`, "meta");
+  }
+  swatches.forEach((s) => s.addEventListener("click", () => apply(s.dataset.theme)));
+  apply(currentTheme);
   window.__cycleTheme = () => { const i = THEMES.indexOf(currentTheme); apply(THEMES[(i + 1) % THEMES.length]); };
+  window.__applyTheme = apply;
 })();
 window.__toggleFocus = () => { const on = document.body.classList.toggle("focus-mode"); pushStatus(on ? "FOCUS MODE ON — CHROME HIDDEN" : "FOCUS MODE OFF", "meta"); };
 (function idle() {
@@ -1167,7 +1274,9 @@ window.__toggleSynth = toggleSynth;
 
 async function takeSnapshot() {
   const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1200); const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d");
-  ctx.fillStyle = "#08080a"; ctx.fillRect(0, 0, w, h); const fx = document.querySelector("#fx-layer canvas"); if (fx) { try { ctx.drawImage(fx, 0, 0, w, h); } catch (_) {} }
+  ctx.fillStyle = "#030308"; ctx.fillRect(0, 0, w, h);
+  const arc = document.querySelector("#arc-layer"); if (arc) { try { ctx.drawImage(arc, 0, 0, w, h); } catch (_) {} }
+  const fx = document.querySelector("#fx-layer canvas"); if (fx) { try { ctx.globalAlpha = 0.3; ctx.drawImage(fx, 0, 0, w, h); ctx.globalAlpha = 1; } catch (_) {} }
   ctx.fillStyle = "rgba(8,8,10,0.55)"; ctx.fillRect(0, h - 140, w, 140); ctx.fillStyle = "#c8ff2e"; ctx.font = "700 22px monospace"; ctx.fillText("STRINGTUNE × THREE.JS", 24, h - 96);
   ctx.fillStyle = "#e6e6ea"; ctx.font = "12px monospace"; const mod = MODULES[Math.max(0, Math.min(MODULES.length - 1, currentModuleIdx))];
   ctx.fillText(`MODULE ${mod.n} · ${mod.name}   ·   SCROLL ${Math.round(motion.docProgress * 100)}%   ·   ${fpsNow} FPS   ·   THEME ${THEME_LABELS[currentTheme]}`, 24, h - 66);
@@ -1233,7 +1342,6 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 (function portstack() {
   const wrap = $("#portstack");
   const deck = $("#port-deck");
-  const spineWrap = $("#port-spine");
   const dim = $("#port-dim");
   const totalEl = $("#port-total");
   const selIdx = $("#port-sel-idx");
@@ -1246,6 +1354,11 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   const confirmBtn = $("#port-confirm");
   const confirmTag = $("#port-confirm-tag");
   const hudOpenBtn = $("#port-open");
+  const track = $("#port-track");
+  const trackFill = $("#port-fill");
+  const trackHead = $("#port-head");
+  const ticksWrap = $("#port-ticks");
+  const nameMini = $("#port-name-mini");
 
   /* portstack only ports to real destinations (all MODULES) */
   const NODES = MODULES.slice();
@@ -1254,15 +1367,20 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   const filterEl = $("#port-filter");
 
   let open = false;
-  let selected = 0;
+  let busy = false; /* transition guard — blocks re-entrant summon/dismiss/port */
+  /* fractional deck position — the smooth scroll target and current value */
+  let deckPos = 0;      /* smoothed, currently displayed */
+  let deckTarget = 0;   /* what deckPos is easing toward */
+  let selected = 0;     /* discrete integer for readouts & port */
   let cards = [];
-  let spineRows = [];
-  let scrollAccum = 0;
+  let ticks = [];
   let filterStr = "";
   let lastSelected = -1;
   let dragRot = 0;
   let nameJob = null;
+  let prevFocus = null;
   const trail = [];
+  const posEl = $("#port-pos");
 
   /* ---- per-module preview kind ---- */
   const PREVIEW_KIND = {
@@ -1282,7 +1400,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     return "";
   }
 
-  /* ---- build cards + spine (once) ---- */
+  /* ---- build cards + timeline tick marks (once) ---- */
   function build() {
     deck.innerHTML = "";
     cards = NODES.map((node, i) => {
@@ -1308,15 +1426,16 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       return card;
     });
 
-    spineWrap.innerHTML = "";
-    spineRows = NODES.map((node, i) => {
-      const row = document.createElement("div");
-      row.className = "port-spine-row";
-      row.innerHTML = `<span>${node.n}</span><span class="port-spine-bar"></span><span>${node.name}</span>`;
-      row.addEventListener("click", () => select(i));
-      row.addEventListener("dblclick", () => { select(i); confirmPort(); });
-      spineWrap.appendChild(row);
-      return row;
+    /* timeline tick markers */
+    ticksWrap.innerHTML = "";
+    ticks = NODES.map((node, i) => {
+      const t = document.createElement("div");
+      t.className = "port-tick";
+      t.style.left = `${(i / (NODES.length - 1)) * 100}%`;
+      t.innerHTML = `<span class="port-tick-label">${node.n}</span>`;
+      t.addEventListener("click", (e) => { e.stopPropagation(); select(i); });
+      ticksWrap.appendChild(t);
+      return t;
     });
   }
 
@@ -1336,25 +1455,31 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     return from;
   }
 
-  /* ---- diagonal cinematic cascade layout ---- */
+  /* ---- fractional diagonal cascade — uses continuous deckPos, not integer ---- */
   function layoutCards() {
+    const mobile = motion.vw < 768;
+    const sx = mobile ? 34 : 82;
+    const sy = mobile ? -26 : -60;
+    const sz = mobile ? 150 : 210;
     cards.forEach((card, i) => {
-      const offset = i - selected;
+      const offset = i - deckPos;   /* fractional — enables smooth sub-integer motion */
       const abs = Math.abs(offset);
       const dim = filterStr && !matches(i);
       /* diagonal filmstrip: cards cascade up-and-right into depth */
-      const x = offset * 82;
-      const y = offset * -60;
-      const z = -abs * 210;
+      const x = offset * sx;
+      const y = offset * sy;
+      const z = -abs * sz;
       const rot = offset * -3;
       const scale = Math.max(0.4, 1 - abs * 0.07);
       let opacity = abs > 7 ? 0 : Math.max(0.06, 1 - abs * 0.13);
       if (dim) opacity *= 0.12;
       card.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rot}deg) scale(${scale})`;
       card.style.opacity = String(opacity);
-      card.style.zIndex = String(1000 - abs);
-      card.classList.toggle("front", i === selected);
-      card.classList.toggle("dof", abs >= 3 && !dim);
+      card.style.zIndex = String(1000 - Math.round(abs));
+      /* "front" state only when we're within half a step of the discrete selected index */
+      const isFront = i === selected && Math.abs(deckPos - selected) < 0.5;
+      card.classList.toggle("front", isFront);
+      card.classList.toggle("dof", abs >= 2.5 && !dim);
       card.classList.toggle("filtered-out", dim);
       const node = NODES[i];
       const visited = visitedModules.has(node.id);
@@ -1366,12 +1491,17 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       else if (visited) { statusEl.classList.add("on"); labelEl.textContent = "VISITED"; }
       else { statusEl.classList.remove("on"); labelEl.textContent = "UNVISITED"; }
     });
-    spineRows.forEach((row, i) => {
-      row.classList.toggle("visited", visitedModules.has(NODES[i].id));
-      row.classList.toggle("current", i === currentModuleIdx);
-      row.style.opacity = filterStr && !matches(i) ? "0.25" : "1";
-      row.style.background = i === selected ? "rgba(200,255,46,0.06)" : "transparent";
+    /* update ticks */
+    ticks.forEach((t, i) => {
+      t.classList.toggle("visited", visitedModules.has(NODES[i].id));
+      t.classList.toggle("current", i === selected);
+      t.style.opacity = filterStr && !matches(i) ? "0.3" : "1";
     });
+    /* fill & playhead — use fractional deckPos for smooth animation */
+    const pct = NODES.length > 1 ? (deckPos / (NODES.length - 1)) * 100 : 0;
+    const pctClamped = Math.max(0, Math.min(100, pct));
+    trackFill.style.width = `${pctClamped}%`;
+    trackHead.style.left = `${pctClamped}%`;
   }
 
   /* ---- selection readout (with glyph scramble on change) ---- */
@@ -1391,6 +1521,8 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     selStatus.textContent = here ? "YOU ARE HERE" : visited ? "VISITED" : "UNVISITED";
     selStatus.className = `tick-label ${here || visited ? "text-acid" : "text-line2"}`;
     confirmTag.textContent = `${node.n} · ${node.name}`;
+    posEl.textContent = `${pad(selected + 1, 2)} / ${pad(NODES.length, 2)}`;
+    nameMini.textContent = node.name;
     const from = MODULES[currentModuleIdx] ?? MODULES[0];
     fromName.textContent = from.name;
     fromDwell.textContent = ((dwellData.get(from.id) || 0) / 1000).toFixed(1) + "s";
@@ -1398,19 +1530,35 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     visitedEl.textContent = `${pad(v, 2)} / ${pad(NODES.length, 2)} VISITED`;
   }
 
+  /* discrete select — sets both target and integer selected, easing renders the motion */
   function select(i) {
+    if (busy) return;
     selected = Math.max(0, Math.min(NODES.length - 1, i));
-    layoutCards();
+    deckTarget = selected;
     updateReadout();
+  }
+
+  /* fractional target — used by wheel/drag scrubbing; snaps selected to nearest */
+  function scrubTo(pos) {
+    if (busy) return;
+    deckTarget = Math.max(0, Math.min(NODES.length - 1, pos));
+    const rounded = Math.round(deckTarget);
+    if (rounded !== selected) {
+      selected = rounded;
+      updateReadout();
+    }
   }
 
   /* ---- filter input ---- */
   function applyFilter() {
-    if (filterStr) { filterEl.textContent = `/ ${filterStr.toUpperCase()}`; filterEl.classList.remove("hidden"); }
-    else { filterEl.textContent = ""; filterEl.classList.add("hidden"); }
+    if (filterStr) {
+      const count = NODES.filter((_, i) => matches(i)).length;
+      filterEl.textContent = `/ ${filterStr.toUpperCase()} · ${count} MATCH`;
+      filterEl.classList.remove("hidden");
+    } else { filterEl.textContent = ""; filterEl.classList.add("hidden"); }
     if (filterStr && !matches(selected)) {
       const first = NODES.findIndex((_, i) => matches(i));
-      if (first >= 0) selected = first;
+      if (first >= 0) { selected = first; deckTarget = first; }
     }
     layoutCards();
     updateReadout();
@@ -1430,8 +1578,10 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 
   /* ---- summon / dismiss ---- */
   function summon() {
-    if (open) return;
+    if (open || busy) return;
     open = true;
+    busy = true;
+    prevFocus = document.activeElement;
     /* freeze scroll */
     lenis?.stop();
     document.documentElement.classList.add("port-lock");
@@ -1441,16 +1591,32 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     filterEl.classList.add("hidden");
     lastSelected = -1;
     selected = Math.max(0, currentModuleIdx);
+    deckPos = selected;
+    deckTarget = selected;
     /* seed trail with current location if empty */
     if (!trail.length) { const cur = MODULES[currentModuleIdx] ?? MODULES[0]; trail.push({ n: cur.n, name: cur.name }); }
     build();
     renderTrail();
+    /* start every card deep in the void with no transitions */
+    wrap.classList.add("no-tween");
+    cards.forEach((c) => {
+      c.style.transform = "translate3d(0, 40px, -1400px)";
+      c.style.opacity = "0";
+      c.style.transitionDelay = "";
+    });
     wrap.classList.add("open");
     wrap.setAttribute("aria-hidden", "false");
-    layoutCards();
+    wrap.focus({ preventScroll: true });
     updateReadout();
+    void deck.offsetWidth; /* reflow so initial state paints */
+    /* re-enable transitions and let CSS animate the fly-in, staggered from center */
+    wrap.classList.remove("no-tween");
+    cards.forEach((c, i) => {
+      c.style.transitionDelay = `${Math.abs(i - selected) * 30}ms`;
+    });
+    layoutCards();
 
-    /* anime.js: collapse all sections into spines */
+    /* anime.js owns the section collapse (no CSS transition on sections) */
     const sections = $$("body > header[data-module], body > section[data-module], body > footer[data-module]");
     animate(sections, {
       scaleY: [1, 0.02],
@@ -1460,28 +1626,24 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       delay: stagger(8),
     });
 
-    /* anime.js: cards fly in from Z-depth */
-    animate(cards, {
-      opacity: [0, (el, i) => { const abs = Math.abs(i - selected); return abs > 6 ? 0 : Math.max(0.05, 1 - abs * 0.14); }],
-      translateZ: [(el, i) => -1400, (el, i) => { const abs = Math.abs(i - selected); return -abs * 240 - ((i - selected) > 0 ? 40 : 0); }],
-      duration: 700,
-      ease: "out(4)",
-      delay: stagger(35, { from: "center" }),
-    });
+    setTimeout(() => {
+      cards.forEach((c) => { c.style.transitionDelay = ""; });
+      busy = false;
+    }, 600 + NODES.length * 30);
 
     pushStatus("PORTSTACK SUMMONED", "ok");
   }
 
   function dismiss() {
-    if (!open) return;
+    if (!open || busy) return;
     open = false;
+    busy = true;
     wrap.classList.add("dismissing");
-    /* anime.js: cards recede */
-    animate(cards, {
-      opacity: 0,
-      translateZ: -1600,
-      duration: 400,
-      ease: "in(3)",
+    /* CSS transitions: cards recede into the void, staggered from selection */
+    cards.forEach((c, i) => {
+      c.style.transitionDelay = `${Math.abs(i - selected) * 18}ms`;
+      c.style.transform = "translate3d(0, 40px, -1600px)";
+      c.style.opacity = "0";
     });
     /* anime.js: sections expand back */
     const sections = $$("body > header[data-module], body > section[data-module], body > footer[data-module]");
@@ -1501,38 +1663,35 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       wrap.setAttribute("aria-hidden", "true");
       document.documentElement.classList.remove("port-lock");
       document.body.classList.remove("porting");
+      deck.style.transform = "";
+      busy = false;
       lenis?.start();
+      if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
     }, 500);
     pushStatus("PORTSTACK DISMISSED", "meta");
   }
 
   /* ---- confirm port — animate front card forward, then transport ---- */
   function confirmPort() {
-    if (!open) return;
+    if (!open || busy) return;
+    busy = true;
     const node = NODES[selected];
     const targetCard = cards[selected];
 
-    /* front card scales to fill viewport */
-    animate(targetCard, {
-      scale: 3.2,
-      translateZ: 400,
-      opacity: [1, 0],
-      duration: 600,
-      ease: "in(3)",
+    /* CSS transitions: front card flies forward through the camera, others recede */
+    cards.forEach((c, i) => {
+      c.style.transitionDelay = i === selected ? "0ms" : `${Math.abs(i - selected) * 14}ms`;
     });
-    /* others dissolve away */
-    animate(cards.filter((_, i) => i !== selected), {
-      opacity: 0,
-      translateZ: -2000,
-      duration: 400,
-      ease: "in(3)",
+    targetCard.style.transform = "translate3d(0, 0, 420px) scale(3.2)";
+    targetCard.style.opacity = "0";
+    cards.forEach((c, i) => {
+      if (i === selected) return;
+      c.style.transform = "translate3d(0, 40px, -2000px)";
+      c.style.opacity = "0";
     });
     /* dim fades to transparent quickly */
-    animate(dim, {
-      opacity: [1, 0],
-      duration: 500,
-      ease: "out(3)",
-    });
+    dim.style.transition = "opacity 0.5s ease";
+    dim.style.opacity = "0";
 
     /* expand sections back to normal */
     const sections = $$("body > header[data-module], body > section[data-module], body > footer[data-module]");
@@ -1554,7 +1713,11 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       document.documentElement.classList.remove("port-lock");
       document.body.classList.remove("porting");
       open = false;
+      busy = false;
       deck.style.transform = "";
+      dim.style.transition = "";
+      dim.style.opacity = "";
+      cards.forEach((c) => { c.style.transitionDelay = ""; });
       lenis?.start();
       scrollToId(node.id);
       visitedModules.add(node.id);
@@ -1562,30 +1725,45 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       if (trail[trail.length - 1]?.name !== node.name) trail.push({ n: node.n, name: node.name });
       if (trail.length > 8) trail.shift();
       renderTrail();
+      if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
       pushStatus(`PORTED → ${node.n} · ${node.name}`, "ok");
     }, 620);
   }
 
-  /* ---- pointer parallax + idle drift (only while open) ---- */
-  updaters.push((_dt, t) => {
+  /* ---- MASTER loop: parallax + smooth deckPos easing + card layout ---- */
+  updaters.push((dt, t) => {
     if (!open) return;
+    /* smooth deckPos toward deckTarget with time-based easing (frame-rate independent) */
+    const easeK = 12; /* higher = snappier */
+    const delta = deckTarget - deckPos;
+    if (Math.abs(delta) > 0.0005) {
+      deckPos += delta * Math.min(1, easeK * dt);
+      layoutCards();
+    } else if (deckPos !== deckTarget) {
+      deckPos = deckTarget;
+      layoutCards();
+    }
+    /* pointer parallax + idle drift on the whole deck */
     const drift = Math.sin(t * 0.4) * 3;
     const px = motion.spx * 10;
     const py = motion.spy * -7;
     deck.style.transform = `rotateY(${-14 + px + dragRot}deg) rotateX(${5 + py + drift}deg)`;
   });
 
-  /* ---- input handlers active only when open ---- */
+  /* ---- input handlers: WHEEL — continuous fractional scrubbing ---- */
   wrap.addEventListener("wheel", (e) => {
-    if (!open) return;
+    if (!open || busy) return;
     e.preventDefault();
-    scrollAccum += e.deltaY;
-    const threshold = 70;
-    if (Math.abs(scrollAccum) >= threshold) {
-      const step = scrollAccum > 0 ? 1 : -1;
-      scrollAccum = 0;
-      const active = filterStr ? nextVisible(selected, step) : selected + step;
-      select(active);
+    /* map wheel delta to fractional deck steps — 100px = 1 card */
+    const stepSize = 100;
+    const dp = e.deltaY / stepSize;
+    /* if filter is active, still snap to visible next/prev on decisive gestures */
+    if (filterStr && Math.abs(e.deltaY) > 40) {
+      const dir = e.deltaY > 0 ? 1 : -1;
+      const target = nextVisible(selected, dir);
+      select(target);
+    } else {
+      scrubTo(deckTarget + dp);
     }
   }, { passive: false });
 
@@ -1598,15 +1776,16 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     confirmPort();
   });
 
-  /* ---- drag-to-surf with momentum ---- */
+  /* ---- drag-to-surf with continuous fractional scrubbing + momentum ---- */
   const stage = $("#port-stage");
-  let dragging = false, dragStartX = 0, dragAccum = 0, lastDragX = 0, dragVel = 0, lastDragT = 0;
+  let dragging = false, dragStartX = 0, lastDragX = 0, dragVel = 0, lastDragT = 0, dragStartDeck = 0;
   stage.addEventListener("pointerdown", (e) => {
     if (!open) return;
     if (e.target.closest(".port-card") && e.target.closest(".port-card").classList.contains("front")) return;
     dragging = true;
     dragStartX = lastDragX = e.clientX;
-    dragAccum = 0; dragVel = 0; lastDragT = performance.now();
+    dragStartDeck = deckTarget;
+    dragVel = 0; lastDragT = performance.now();
     wrap.classList.add("dragging");
     stage.setPointerCapture?.(e.pointerId);
   });
@@ -1618,30 +1797,41 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     dragVel = dx / dt;
     lastDragT = now;
     lastDragX = e.clientX;
-    dragAccum += dx;
-    dragRot = Math.max(-14, Math.min(14, (e.clientX - dragStartX) / 20));
-    const stepPx = 70;
-    if (Math.abs(dragAccum) >= stepPx) {
-      const step = dragAccum > 0 ? -1 : 1; /* drag right → previous */
-      dragAccum = 0;
-      const active = filterStr ? nextVisible(selected, step) : selected + step;
-      select(active);
-    }
+    /* drag → fractional deck position (drag right = go backward through the stack) */
+    const totalDx = e.clientX - dragStartX;
+    const pxPerCard = 90;
+    scrubTo(dragStartDeck - totalDx / pxPerCard);
+    dragRot = Math.max(-14, Math.min(14, totalDx / 20));
   });
   const endDrag = (e) => {
     if (!dragging) return;
     dragging = false;
     wrap.classList.remove("dragging");
     stage.releasePointerCapture?.(e.pointerId);
-    /* momentum: extra steps from release velocity */
-    const extra = Math.round(Math.max(-4, Math.min(4, -dragVel / 900)));
-    if (extra) select(filterStr ? nextVisible(selected, Math.sign(extra)) : selected + extra);
-    /* ease dragRot back toward neutral (parallax updater renders it) */
+    /* momentum: use release velocity for extra glide, then snap to nearest */
+    const glide = Math.max(-5, Math.min(5, -dragVel / 700));
+    if (Math.abs(glide) > 0.2) {
+      const rounded = Math.round(deckTarget + glide);
+      select(Math.max(0, Math.min(NODES.length - 1, rounded)));
+    } else {
+      select(Math.round(deckTarget)); /* snap to nearest whole card */
+    }
+    /* ease dragRot back toward neutral */
     const rotState = { r: dragRot };
     animate(rotState, { r: 0, duration: 600, ease: "out(3)", onUpdate: () => { dragRot = rotState.r; } });
   };
   stage.addEventListener("pointerup", endDrag);
   stage.addEventListener("pointercancel", endDrag);
+
+  /* ---- click on timeline track to jump to that position ---- */
+  track.addEventListener("click", (e) => {
+    if (!open || busy) return;
+    e.stopPropagation();
+    const r = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const target = Math.round(pct * (NODES.length - 1));
+    select(target);
+  });
 
   /* keyboard when open */
   window.addEventListener("keydown", (e) => {

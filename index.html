@@ -12,8 +12,11 @@
     <title>StringTune × Three.js — A 3D Motion Runtime</title>
   </head>
   <body class="bg-ink font-display text-bone">
+    <!-- ==================== PIXEL-ARC BACKGROUND (deepest) ==================== -->
+    <canvas id="arc-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 -z-10 h-full w-full"></canvas>
+
     <!-- ==================== PERSISTENT SHADER LAYER ==================== -->
-    <div id="fx-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 z-0 opacity-[0.32] mix-blend-screen"></div>
+    <div id="fx-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 z-0 opacity-[0.28] mix-blend-screen"></div>
 
     <!-- ==================== COMMAND PALETTE ==================== -->
     <div id="cmdk" class="fixed inset-0 z-[95] hidden items-start justify-center bg-ink/70 p-4 backdrop-blur-md md:p-16">
@@ -53,7 +56,7 @@
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">SHADER LAYER</span><span class="tick-label text-bone">S</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">REPLAY SPLIT</span><span class="tick-label text-bone">R</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">NEXT / PREV MODULE</span><span class="tick-label text-bone">J K / ← →</span></div>
-          <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">CYCLE THEME</span><span class="tick-label text-bone">T</span></div>
+          <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">CYCLE THEME (6)</span><span class="tick-label text-bone">T</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">FOCUS MODE</span><span class="tick-label text-bone">F</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">DEBUG GRID</span><span class="tick-label text-bone">D</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">AMBIENT SOUND</span><span class="tick-label text-bone">M</span></div>
@@ -157,7 +160,7 @@
     <header id="top" data-module="HERO / ICOSA" class="relative flex h-[100svh] min-h-[620px] flex-col overflow-hidden">
       <div id="hero-gl" class="absolute inset-0">
         <div id="gl-hero" class="relative h-full w-full">
-          <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(200,255,46,0.07),transparent_62%)]"></div>
+          <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.07),transparent_62%)]"></div>
         </div>
       </div>
 
@@ -348,7 +351,7 @@
               <svg viewBox="0 0 280 280" class="h-full w-full -rotate-90">
                 <circle cx="140" cy="140" r="120" fill="none" stroke="#1e1e26" stroke-width="1.5"></circle>
                 <g id="prog-ticks"></g>
-                <circle id="prog-ring" cx="140" cy="140" r="120" fill="none" stroke="#c8ff2e" stroke-width="2" stroke-dasharray="753.98" stroke-dashoffset="753.98"></circle>
+                <circle id="prog-ring" cx="140" cy="140" r="120" fill="none" stroke="currentColor" class="text-acid" stroke-width="2" stroke-dasharray="753.98" stroke-dashoffset="753.98"></circle>
               </svg>
               <div class="absolute inset-0 grid place-items-center">
                 <div class="text-center">
@@ -637,7 +640,7 @@
       <div class="mx-auto max-w-[1440px] px-5 pb-16 md:px-10 md:pb-24">
         <div id="webgl-stage" class="relative border border-line bg-ink2">
           <div id="gl-orbit" class="relative h-[58vh] min-h-[400px] w-full md:h-[74vh]">
-            <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(200,255,46,0.07),transparent_62%)]"></div>
+            <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.07),transparent_62%)]"></div>
           </div>
           <div class="tick-label pointer-events-none absolute left-4 top-4 flex items-center gap-2 text-fog">
             <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>WEBGL CONTEXT — LIVE
@@ -807,7 +810,7 @@
         <div id="mask-stage" class="relative h-[70vh] min-h-[440px] overflow-hidden border border-line bg-ink2">
           <!-- background: acid grid + glow -->
           <div class="absolute inset-0 grid-bg opacity-90"></div>
-          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(200,255,46,0.35),transparent_55%),radial-gradient(circle_at_80%_75%,rgba(200,255,46,0.18),transparent_60%)]"></div>
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(var(--acid-rgb),0.35),transparent_55%),radial-gradient(circle_at_80%_75%,rgba(var(--acid-rgb),0.18),transparent_60%)]"></div>
           <div class="absolute inset-0 flex items-center justify-center">
             <div class="text-center">
               <div class="tick-label text-ink/70">/M UNCLIPPED</div>
@@ -859,7 +862,7 @@
             <div class="relative mx-auto aspect-square w-[70vw] max-w-[380px]">
               <svg viewBox="0 0 220 220" class="h-full w-full -rotate-90">
                 <circle cx="110" cy="110" r="90" fill="none" stroke="#1e1e26" stroke-width="1.5" stroke-dasharray="2 6"></circle>
-                <circle id="seq-ring" cx="110" cy="110" r="90" fill="none" stroke="#c8ff2e" stroke-width="2" stroke-dasharray="565.49" stroke-dashoffset="565.49"></circle>
+                <circle id="seq-ring" cx="110" cy="110" r="90" fill="none" stroke="currentColor" class="text-acid" stroke-width="2" stroke-dasharray="565.49" stroke-dashoffset="565.49"></circle>
               </svg>
               <div class="absolute inset-0 grid place-items-center">
                 <div class="text-center">
@@ -965,7 +968,7 @@
     <!-- ==================== CINEMATIC OUTRO ==================== -->
     <section id="m-outro" data-module="+X / TRANSMISSION" class="relative overflow-hidden border-t border-line">
       <div class="grid-bg absolute inset-0 opacity-70"></div>
-      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(200,255,46,0.1),transparent_65%)]"></div>
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.1),transparent_65%)]"></div>
       <div class="relative mx-auto max-w-[1440px] px-5 py-24 md:px-10 md:py-40">
         <div class="flex items-center justify-between border-b border-line pb-6">
           <span class="tick-label flex items-center gap-2 text-fog"><span class="h-1.5 w-1.5 animate-blink bg-acid"></span>+X / TRANSMISSION</span>
@@ -1008,6 +1011,8 @@
       <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="cyan" style="background:#5ce1ff" title="Cyan"></button>
       <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="magenta" style="background:#ff5cd6" title="Magenta"></button>
       <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="amber" style="background:#ffb84d" title="Amber"></button>
+      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="nexus" style="background:#5b5bf0" title="Nexus"></button>
+      <button class="theme-swatch h-4 w-4 border border-line2 outline-offset-2 outline-acid" data-theme="mono" style="background:#e6e6ea" title="Mono"></button>
     </div>
 
     <!-- ==================== DWELL PANEL ==================== -->
@@ -1023,7 +1028,7 @@
     <div id="debug-grid" aria-hidden="true" class="pointer-events-none fixed inset-0 z-[74] hidden"></div>
 
     <!-- ==================== PORTSTACK OVERLAY ==================== -->
-    <div id="portstack" class="fixed inset-0 z-[92] hidden" aria-hidden="true">
+    <div id="portstack" class="fixed inset-0 z-[92] hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Portstack transport" tabindex="-1">
       <!-- backdrop dim -->
       <div id="port-dim" class="absolute inset-0 bg-ink/95 backdrop-blur-sm"></div>
 
@@ -1076,16 +1081,39 @@
         </div>
       </div>
 
-      <!-- confirm button (also press Enter) -->
-      <div class="pointer-events-auto absolute inset-x-0 bottom-24 z-10 flex justify-center px-4">
+      <!-- confirm button (Enter) -->
+      <div class="pointer-events-auto absolute inset-x-0 bottom-28 z-10 flex flex-col items-center gap-3 px-4">
         <button id="port-confirm" class="tick-label group flex items-center gap-3 border border-acid bg-acid px-6 py-3 text-ink transition-transform duration-300 hover:scale-105">
           <span>PORT →</span>
           <span id="port-confirm-tag" class="border-l border-ink/40 pl-3">01 · REVEAL</span>
         </button>
       </div>
 
-      <!-- compressed spine (bottom) -->
-      <div id="port-spine" class="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-[2px] border-t border-line2 bg-ink/70 px-4 pb-3 pt-2 backdrop-blur-md md:px-8"></div>
+      <!-- timeline scrubber (bottom) -->
+      <div id="port-scrubber" class="absolute inset-x-0 bottom-8 z-10 px-6 md:px-16">
+        <div class="mx-auto max-w-[900px]">
+          <div class="tick-label mb-3 flex items-center justify-between text-fog">
+            <span>NODE <span id="port-pos" class="tabular-nums text-acid">01 / 20</span></span>
+            <span class="hidden md:inline">SCROLL · SURF  ·  ← → · STEP  ·  ↵ · PORT</span>
+            <span id="port-name-mini" class="tabular-nums text-bone">REVEAL</span>
+          </div>
+          <div id="port-track" class="relative h-8 cursor-pointer">
+            <!-- base rail -->
+            <div class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line2"></div>
+            <!-- filled rail -->
+            <div id="port-fill" class="absolute left-0 top-1/2 h-px -translate-y-1/2 bg-acid transition-[width] duration-200" style="width: 0%"></div>
+            <!-- tick markers (injected by JS) -->
+            <div id="port-ticks" class="absolute inset-0"></div>
+            <!-- playhead -->
+            <div id="port-head" class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style="left: 0%">
+              <div class="relative">
+                <div class="h-4 w-px bg-acid"></div>
+                <div class="absolute -left-[3px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 bg-acid"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ==================== FOOTER ==================== -->
