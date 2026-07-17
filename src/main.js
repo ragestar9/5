@@ -1474,7 +1474,9 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 
   /* ---- live page previews — each card shows a scaled-down clone of the real
      section DOM, snapshotted at summon time, behind a fake loading veil ---- */
-  const PAGE_W = 1280; /* virtual page width the clones render at */
+  /* virtual page width the clones render at — narrower on mobile since media
+     queries follow the real viewport, so clones lay out in their mobile form */
+  const pageW = () => (motion.vw < 768 ? 720 : 1280);
   function makeLivePreview(node) {
     const holder = document.createElement("div");
     holder.className = "pv-live";
@@ -1521,6 +1523,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 
   /* fit each clone to its card — must run while the overlay is visible */
   function sizeLivePreviews() {
+    const w0 = pageW();
     cards.forEach((card) => {
       const holder = card.querySelector(".pv-live");
       const inner = holder?.querySelector(".pv-live-inner");
@@ -1528,7 +1531,8 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       if (!holder || !inner || !page) return;
       const w = holder.clientWidth || 1;
       const h = holder.clientHeight || 1;
-      const s = w / PAGE_W;
+      const s = w / w0;
+      inner.style.width = `${w0}px`;
       inner.style.transform = `scale(${s})`;
       page.style.height = `${Math.ceil(h / s)}px`;
     });
@@ -1575,6 +1579,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       card.querySelector(".port-card-preview").appendChild(makeLivePreview(node));
       card.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (suppressClick) return; /* this was a drag release, not a tap */
         if (i === selected) confirmPort();
         else select(i);
       });
@@ -1933,7 +1938,13 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   }, { passive: false });
 
   wrap.addEventListener("click", (e) => {
+    if (suppressClick) return;
     if (e.target === wrap || e.target === dim) dismiss();
+  });
+
+  $("#port-close")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismiss();
   });
 
   confirmBtn.addEventListener("click", (e) => {
@@ -1941,21 +1952,33 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     confirmPort();
   });
 
-  /* ---- drag-to-surf with continuous fractional scrubbing + momentum ---- */
+  /* ---- drag-to-surf with continuous fractional scrubbing + momentum ----
+     Tracks from pointerdown anywhere on the stage (incl. the front card, which
+     fills most of a phone screen); only becomes a real drag after 8px of travel
+     so taps still select/confirm. A real drag suppresses the ensuing click. */
   const stage = $("#port-stage");
-  let dragging = false, dragStartX = 0, lastDragX = 0, dragVel = 0, lastDragT = 0, dragStartDeck = 0;
+  const DRAG_SLOP = 8;
+  let dragging = false, dragMoved = false, suppressClick = false;
+  let dragStartX = 0, lastDragX = 0, dragVel = 0, lastDragT = 0, dragStartDeck = 0;
   stage.addEventListener("pointerdown", (e) => {
-    if (!open) return;
-    if (e.target.closest(".port-card") && e.target.closest(".port-card").classList.contains("front")) return;
+    if (!open || busy) return;
     dragging = true;
+    dragMoved = false;
     dragStartX = lastDragX = e.clientX;
     dragStartDeck = deckTarget;
     dragVel = 0; lastDragT = performance.now();
-    wrap.classList.add("dragging");
-    stage.setPointerCapture?.(e.pointerId);
+    /* NOTE: no pointer capture yet — capturing here would retarget the tap's
+       click away from the card. Capture engages once real dragging starts. */
   });
   stage.addEventListener("pointermove", (e) => {
     if (!dragging) return;
+    const totalDx = e.clientX - dragStartX;
+    if (!dragMoved) {
+      if (Math.abs(totalDx) < DRAG_SLOP) return; /* still a tap */
+      dragMoved = true;
+      wrap.classList.add("dragging");
+      try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+    }
     const dx = e.clientX - lastDragX;
     const now = performance.now();
     const dt = Math.max((now - lastDragT) / 1000, 1 / 240);
@@ -1963,16 +1986,19 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     lastDragT = now;
     lastDragX = e.clientX;
     /* drag → fractional deck position (drag right = go backward through the stack) */
-    const totalDx = e.clientX - dragStartX;
-    const pxPerCard = 90;
+    const pxPerCard = motion.vw < 768 ? 64 : 90;
     scrubTo(dragStartDeck - totalDx / pxPerCard);
     dragRot = Math.max(-14, Math.min(14, totalDx / 20));
   });
   const endDrag = (e) => {
     if (!dragging) return;
     dragging = false;
-    wrap.classList.remove("dragging");
     stage.releasePointerCapture?.(e.pointerId);
+    if (!dragMoved) return; /* plain tap — let the click do its thing */
+    wrap.classList.remove("dragging");
+    /* swallow the click this drag would otherwise fire on whatever's under it */
+    suppressClick = true;
+    setTimeout(() => (suppressClick = false), 0);
     /* momentum: use release velocity for extra glide, then snap to nearest */
     const glide = Math.max(-5, Math.min(5, -dragVel / 700));
     if (Math.abs(glide) > 0.2) {
