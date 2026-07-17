@@ -1398,7 +1398,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     const result = []; const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode(node) {
       if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT; const parent = node.parentElement; if (!parent) return NodeFilter.FILTER_REJECT;
       if (/^(SCRIPT|STYLE|TEXTAREA|INPUT|NOSCRIPT|CANVAS|SVG|TEMPLATE|IFRAME)$/.test(parent.tagName)) return NodeFilter.FILTER_REJECT;
-      if (parent.closest("#status-console, #preloader, #cmdk, #hotkeys, #reticle, #dwell-panel")) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("#status-console, #preloader, #cmdk, #hotkeys, #reticle, #dwell-panel, #portstack")) return NodeFilter.FILTER_REJECT;
       if (stormState.activeJobs.has(parent)) return NodeFilter.FILTER_REJECT;
       const r = parent.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return NodeFilter.FILTER_REJECT;
       if (r.bottom < -200 || r.top > motion.vh + 200) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; } });
@@ -1472,22 +1472,87 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   const trail = [];
   const posEl = $("#port-pos");
 
-  /* ---- per-module preview kind ---- */
-  const PREVIEW_KIND = {
-    "m-reveal": "bars", "m-parallax": "wire", "m-progress": "arc", "m-lerp": "wave",
-    "m-glide": "wave", "m-cursor": "wire", "m-magnetic": "arc", "m-spotlight": "arc",
-    "m-webgl": "wire", "m-impulse": "wave", "m-drag": "bars", "m-split": "glyph",
-    "m-mask": "wire", "m-sequence": "bars", "m-diag": "wave", "m-marquee": "wave",
-    "m-registry": "bars", "top": "wire", "m-outro": "glyph", "footer": "glyph",
-  };
-  function previewHTML(node) {
-    const kind = PREVIEW_KIND[node.id] || "bars";
-    if (kind === "bars") return `<div class="pv-bars">${Array.from({ length: 8 }).map(() => "<span></span>").join("")}</div>`;
-    if (kind === "wire") return `<div class="pv-wire"></div>`;
-    if (kind === "arc") return `<div class="pv-arc"><svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16" fill="none" stroke-width="2"/><circle class="val" cx="20" cy="20" r="16" fill="none" stroke-width="2" stroke-dasharray="100" stroke-dashoffset="35" transform="rotate(-90 20 20)"/></svg></div>`;
-    if (kind === "wave") return `<div class="pv-wave">${Array.from({ length: 14 }).map((_, i) => `<span style="height:${20 + Math.abs(Math.sin(i * 0.9)) * 70}%"></span>`).join("")}</div>`;
-    if (kind === "glyph") return `<div class="pv-glyph">${"▓▒░<>/#*+=-ΣΩΦ".repeat(4)}</div>`;
-    return "";
+  /* ---- live page previews — each card shows a scaled-down clone of the real
+     section DOM, snapshotted at summon time, behind a fake loading veil ---- */
+  const PAGE_W = 1280; /* virtual page width the clones render at */
+  function makeLivePreview(node) {
+    const holder = document.createElement("div");
+    holder.className = "pv-live";
+    const inner = document.createElement("div");
+    inner.className = "pv-live-inner";
+    const src = document.getElementById(node.id);
+    if (src) {
+      const clone = src.cloneNode(true);
+      clone.removeAttribute("id");
+      clone.removeAttribute("data-module");
+      clone.style.transform = "";
+      clone.style.opacity = "";
+      /* strip ids so the clones never collide with the live document */
+      clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+      /* canvases clone blank — swap for a wire-grid placeholder */
+      clone.querySelectorAll("canvas").forEach((c) => {
+        const ph = document.createElement("div");
+        ph.className = "pv-canvas-ph";
+        ph.style.position = "absolute";
+        ph.style.inset = "0";
+        c.replaceWith(ph);
+      });
+      /* wake states that observers/animations drive on the real page */
+      clone.querySelectorAll(".rv").forEach((el) => el.classList.add("in"));
+      clone.querySelectorAll(".ch").forEach((el) => { el.style.transform = "none"; el.style.opacity = "1"; });
+      clone.querySelectorAll("[style]").forEach((el) => { if (el.style.opacity) el.style.opacity = ""; });
+      const page = document.createElement("div");
+      page.className = "pv-live-page";
+      page.appendChild(clone);
+      inner.appendChild(page);
+    } else {
+      inner.innerHTML = `<div class="pv-glyph">${"▓▒░<>/#*+=-ΣΩΦ".repeat(4)}</div>`;
+    }
+    const veil = document.createElement("div");
+    veil.className = "pv-load";
+    veil.innerHTML = `
+      <div class="pv-load-scan"></div>
+      <div class="pv-load-meta"><span>SYNC ${node.n}</span><span class="pv-load-pct">000%</span></div>
+      <div class="pv-load-bar"><span style="width:0%"></span></div>`;
+    holder.appendChild(inner);
+    holder.appendChild(veil);
+    return holder;
+  }
+
+  /* fit each clone to its card — must run while the overlay is visible */
+  function sizeLivePreviews() {
+    cards.forEach((card) => {
+      const holder = card.querySelector(".pv-live");
+      const inner = holder?.querySelector(".pv-live-inner");
+      const page = holder?.querySelector(".pv-live-page");
+      if (!holder || !inner || !page) return;
+      const w = holder.clientWidth || 1;
+      const h = holder.clientHeight || 1;
+      const s = w / PAGE_W;
+      inner.style.transform = `scale(${s})`;
+      page.style.height = `${Math.ceil(h / s)}px`;
+    });
+  }
+
+  /* fake loading — counters resolve staggered outward from the selection */
+  function playPreviewLoads() {
+    cards.forEach((card, i) => {
+      const holder = card.querySelector(".pv-live");
+      if (!holder) return;
+      holder.classList.remove("ready");
+      if (motion.reduced) { holder.classList.add("ready"); return; }
+      const pct = holder.querySelector(".pv-load-pct");
+      const bar = holder.querySelector(".pv-load-bar > span");
+      const st = { p: 0 };
+      animate(st, {
+        p: 100,
+        duration: 420 + Math.random() * 320,
+        delay: 240 + Math.abs(i - selected) * 70 + Math.random() * 220,
+        ease: "inOut(2)",
+        onUpdate: () => { const v = Math.floor(st.p); pct.textContent = `${pad(v, 3)}%`; bar.style.width = `${v}%`; },
+        onComplete: () => holder.classList.add("ready"),
+      });
+    });
   }
 
   /* ---- build cards + timeline tick marks (once) ---- */
@@ -1506,7 +1571,8 @@ $("#ft-export")?.addEventListener("click", exportJSON);
           <div class="port-card-name">${node.name}</div>
           <div class="port-card-meta mt-2">${node.meta}</div>
         </div>
-        <div class="port-card-preview">${previewHTML(node)}</div>`;
+        <div class="port-card-preview"></div>`;
+      card.querySelector(".port-card-preview").appendChild(makeLivePreview(node));
       card.addEventListener("click", (e) => {
         e.stopPropagation();
         if (i === selected) confirmPort();
@@ -1699,6 +1765,8 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     wrap.focus({ preventScroll: true });
     updateReadout();
     void deck.offsetWidth; /* reflow so initial state paints */
+    sizeLivePreviews(); /* needs layout — overlay must be visible */
+    playPreviewLoads();
     /* re-enable transitions and let CSS animate the fly-in, staggered from center */
     wrap.classList.remove("no-tween");
     cards.forEach((c, i) => {
@@ -1954,6 +2022,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   }, true); /* capture so it beats page hotkeys */
 
   hudOpenBtn.addEventListener("click", summon);
+  window.addEventListener("resize", () => { if (open) sizeLivePreviews(); });
 
   window.__portstack = { summon, dismiss, confirmPort, select };
 })();
