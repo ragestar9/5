@@ -1,7 +1,7 @@
 import "./index.css";
 import Lenis from "lenis";
 import * as THREE from "three";
-import { animate, spring, stagger } from "animejs";
+import { animate, stagger } from "animejs";
 import { bindTelemetry, clamp01, motion } from "./lib/motion.js";
 
 /* ================================================================
@@ -42,7 +42,7 @@ const scrollToId = (id) => {
   const el = document.getElementById(id);
   if (!el) return;
   if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, duration: 1.25 });
-  else el.scrollIntoView({ behavior: "smooth" });
+  else el.scrollIntoView({ behavior: motion.reduced ? "auto" : "smooth" });
 };
 
 /* ---- PORT WIPE: shutter teleport — hides the travel ---- */
@@ -371,16 +371,20 @@ $("#gl-dpr").textContent = motion.dpr.toFixed(1);
 (function clocks() {
   const clock = $("#hud-clock");
   const up = $("#ft-uptime");
+  const upBento = $("#bento-uptime");
   let secs = 0;
   const tick = () => {
     const d = new Date();
     clock.textContent = `${pad(d.getUTCHours(), 2)}:${pad(d.getUTCMinutes(), 2)}:${pad(d.getUTCSeconds(), 2)} UTC`;
-    up.textContent = `${pad(Math.floor(secs / 60), 2)}:${pad(secs % 60, 2)}`;
+    const t = `${pad(Math.floor(secs / 60), 2)}:${pad(secs % 60, 2)}`;
+    up.textContent = t;
+    if (upBento) upBento.textContent = t;
     secs++;
   };
   tick();
   window.setInterval(tick, 1000);
 })();
+const dprEl = $("#bento-dpr"); if (dprEl) dprEl.textContent = motion.dpr.toFixed(1);
 
 /* cursor reticle — targeting frame that locks onto interactive elements
    and stretches with pointer velocity */
@@ -422,6 +426,18 @@ function renderFps() {
     .join("");
 }
 
+/* morphing navbar — compresses once you leave the hero, progress hairline under it */
+(function navMorph() {
+  const hud = $("#hud-top");
+  const bar = $("#hud-progress");
+  let compact = false;
+  updaters.push(() => {
+    if (bar) bar.style.transform = `scaleX(${motion.docProgress})`;
+    const should = motion.scrollY > motion.vh * 0.55;
+    if (should !== compact) { compact = should; hud.classList.toggle("nav-compact", compact); }
+  });
+})();
+
 /* scroll stat readouts */
 (function statsLoop() {
   const el = {
@@ -430,6 +446,7 @@ function renderFps() {
     posPxl: $("#pos-pxl"), posPct: $("#pos-pct"), posDot: $("#pos-dot"),
     posDown: $("#pos-down"), posUp: $("#pos-up"), posIdle: $("#pos-idle"),
     impV: $("#imp-v"),
+    impMirror: $("#imp-mirror"),
     velGauge: $("#hud-vel-gauge"),
   };
   let prev = 0;
@@ -452,6 +469,7 @@ function renderFps() {
     el.posUp.classList.toggle("hidden", dir !== "UP");
     el.posIdle.classList.toggle("hidden", dir !== "IDLE");
     el.impV.textContent = Math.round(motion.pointerV).toLocaleString();
+    if (el.impMirror) el.impMirror.textContent = Math.round(motion.pointerV).toLocaleString();
     if (el.velGauge) {
       const norm = Math.min(Math.abs(vel) / 6000, 1);
       el.velGauge.style.width = `${norm * 100}%`;
@@ -462,27 +480,35 @@ function renderFps() {
 
 /* active module observer + rail + status console */
 let currentModuleIdx = 0;
-const statusQueue = [];
 const statusConsole = $("#status-console");
-let statusIdleTimer = 0;
 
 function pushStatus(msg, tone = "info") {
   const tones = { info: "text-bone/80", ok: "text-acid", warn: "text-red-400", meta: "text-fog" };
   const el = document.createElement("div");
-  el.className = `flex items-center gap-2 border-l-2 pl-2 py-0.5 ${
-    tone === "ok" ? "border-acid" : tone === "warn" ? "border-red-400" : "border-line2"
-  } ${tones[tone] || tones.info}`;
-  el.innerHTML = `<span class="shrink-0 text-[9px] opacity-50">${pad(statusQueue.length + 1, 3)}</span><span class="truncate">${msg}</span>`;
-  statusQueue.push(el);
+  el.className = `toast tone-${tone} ${tones[tone] || tones.info}`;
+  el.style.setProperty("--toast-life", "4.2s");
+  el.innerHTML = `<span class="toast-idx">${pad(++pushStatus.count, 3)}</span><span class="toast-msg">${msg}</span>`;
   statusConsole.appendChild(el);
   statusConsole.classList.remove("hidden");
   while (statusConsole.children.length > 5) statusConsole.removeChild(statusConsole.firstChild);
-  clearTimeout(statusIdleTimer);
-  statusIdleTimer = setTimeout(() => {
-    statusConsole.classList.add("hidden");
-    statusConsole.innerHTML = "";
-    statusQueue.length = 0;
+  /* each toast dismisses itself when its progress bar drains */
+  setTimeout(() => {
+    el.classList.add("leaving");
+    setTimeout(() => { el.remove(); if (!statusConsole.children.length) statusConsole.classList.add("hidden"); }, 380);
   }, 4200);
+}
+pushStatus.count = 0;
+
+/* liquid buttons — fill sweeps out from the cursor's entry point */
+function bindLiquid(root = document) {
+  root.querySelectorAll(".liquid-btn").forEach((btn) => {
+    if (btn.__liquid) return; btn.__liquid = true;
+    btn.addEventListener("pointerenter", (e) => {
+      const r = btn.getBoundingClientRect();
+      btn.style.setProperty("--lx", `${((e.clientX - r.left) / r.width) * 100}%`);
+      btn.style.setProperty("--ly", `${((e.clientY - r.top) / r.height) * 100}%`);
+    });
+  });
 }
 
 function scrollToModuleByIndex(i) {
@@ -491,29 +517,41 @@ function scrollToModuleByIndex(i) {
   scrollToId(target.id);
   pushStatus(`JUMP ${target.n} · ${target.name}`, "ok");
 }
+void scrollToModuleByIndex;
 
 const visitedModules = new Set(["top"]); // hero counted as visited on load
 window.__visitedModules = visitedModules;
 (function moduleObserver() {
   const els = $$("[data-module]");
   const rail = $("#rail");
+  const nodesWrap = $("#spine-nodes");
+  const spineFill = $("#spine-fill");
   const idxEl = $("#hud-mod-idx");
   const labelEl = $("#hud-mod-label");
   const progEl = $("#hud-mod-prog");
   $("#hud-mod-total").textContent = pad(els.length, 2);
-  const ticks = els.map(() => {
-    const s = document.createElement("span");
-    s.className = "rail-tick";
-    rail.appendChild(s);
+  /* progress spine — a line that draws down the page with a node per module */
+  const ticks = els.map((el, i) => {
+    const s = document.createElement("button");
+    s.className = "spine-node";
+    s.style.top = `${(i / (els.length - 1)) * 100}%`;
+    s.innerHTML = `<span class="spine-dot"></span><span class="spine-label">${MODULE_BY_ID.get(el.id)?.n ?? pad(i + 1, 2)} · ${(el.dataset.module ?? "").split("/").pop().trim()}</span>`;
+    s.addEventListener("click", () => { if (el.id) scrollToId(el.id); });
+    nodesWrap.appendChild(s);
     return s;
   });
+  void rail;
   let activeEl = els[0];
   const setActive = (i) => {
     currentModuleIdx = i;
     activeEl = els[i];
     idxEl.textContent = pad(i + 1, 2);
     labelEl.textContent = els[i].dataset.module ?? "";
-    ticks.forEach((t, ti) => t.classList.toggle("on", ti === i));
+    ticks.forEach((t, ti) => {
+      t.classList.toggle("on", ti === i);
+      t.classList.toggle("passed", ti < i);
+    });
+    if (spineFill) spineFill.style.height = `${(i / (els.length - 1)) * 100}%`;
     if (els[i].id) visitedModules.add(els[i].id);
   };
   setActive(0);
@@ -632,7 +670,7 @@ function gateVisibility(el, cb) {
   gateVisibility(holder, (v) => (visible = v));
   const pos = geo.attributes.position;
   updaters.push((dt, t) => {
-    if (!visible) return;
+    if (!visible || motion.reduced) return;
     const v = Math.min(Math.abs(motion.velocity) / 5200, 1);
     const amp = 0.055 + v * 0.42;
     for (let i = 0; i < pos.count; i++) {
@@ -682,6 +720,53 @@ function gateVisibility(el, cb) {
   });
 })();
 
+/* kinetic hero headline — cursor proximity ripples variable-font weight through
+   the chars, like a magnet passing over the type */
+(function kineticHeadline() {
+  if (motion.touch || motion.reduced) return;
+  const head = $("#hero-head");
+  const hero = $("#top");
+  /* split each word-span's text into chars, preserving the .w-in boot wrappers */
+  $$("#hero-head .w-in").forEach((w) => {
+    const text = w.textContent;
+    w.innerHTML = text.split("").map((c) => c === " " || c === " "
+      ? "&nbsp;"
+      : `<span class="hk" ${w.classList.contains("text-acid") ? 'data-acid="1"' : ""}>${c}</span>`).join("");
+  });
+  const chars = $$("#hero-head .hk");
+  const state = chars.map(() => ({ w: 500, target: 500, q: 0 }));
+  const RADIUS = 190;
+  let inside = false;
+  hero.addEventListener("pointerenter", () => (inside = true));
+  hero.addEventListener("pointerleave", () => (inside = false));
+  let px = 0, py = 0;
+  hero.addEventListener("pointermove", (e) => { px = e.clientX; py = e.clientY; }, { passive: true });
+  updaters.push(() => {
+    /* only while the headline is on screen */
+    const hr = head.getBoundingClientRect();
+    if (hr.bottom < 0 || hr.top > motion.vh) return;
+    /* base weight follows scroll velocity (the h1's velo-wght is overridden by
+       the inline char styles, so fold that signal in here) */
+    const base = 300 + Math.min(Math.abs(motion.velocity) / 6000, 1) * 300;
+    /* read all rects first, then write — avoids interleaved layout thrash */
+    const rects = inside ? chars.map((c) => c.getBoundingClientRect()) : null;
+    for (let i = 0; i < chars.length; i++) {
+      const s = state[i];
+      if (inside) {
+        const r = rects[i];
+        const d = Math.hypot(px - (r.left + r.width / 2), py - (r.top + r.height / 2));
+        const f = Math.max(0, 1 - d / RADIUS);
+        s.target = Math.min(700, base + f * f * 320);
+      } else {
+        s.target = base;
+      }
+      s.w += (s.target - s.w) * 0.16;
+      const q = Math.round(s.w / 8) * 8; /* quantise to avoid style churn */
+      if (q !== s.q) { s.q = q; chars[i].style.fontVariationSettings = `"wght" ${q}`; }
+    }
+  });
+})();
+
 /* ================================================================
    5. FIX #3: VELOCITY MARQUEES — rAF driven, no anime.js recursion
 ================================================================ */
@@ -699,7 +784,7 @@ $$(".vmq").forEach((wrap) => {
   let rowW = 0;
   const measure = () => (rowW = track.firstElementChild.offsetWidth);
   measure(); document.fonts?.ready.then(measure); window.addEventListener("resize", measure);
-  let x = reverse ? 0 : 0;
+  let x = 0;
   let initialized = false;
   updaters.push((dt) => {
     if (!rowW) return;
@@ -722,22 +807,62 @@ $$(".vmq").forEach((wrap) => {
   const rows = $("#reg-rows");
   const hoverLabel = $("#reg-hover");
   const regNodes = MODULES.filter((m) => !["top", "footer", "m-outro"].includes(m.id));
+  let expandedWrap = null;
   regNodes.forEach((node, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "reg-row-wrap";
     const b = document.createElement("button");
     b.className = "reg-row rv relative grid w-full grid-cols-12 items-center gap-2 border-b border-line px-5 py-4 text-left transition-colors duration-300 md:px-10 md:py-5";
     b.style.setProperty("--rvd", `${(i % 5) * 0.05}s`);
+    b.setAttribute("aria-expanded", "false");
     b.innerHTML = `
       <span class="rr-idx tick-label col-span-2 text-fog md:col-span-1">${node.n}</span>
       <span class="rr-name col-span-8 font-display text-xl font-medium uppercase tracking-tight text-bone md:col-span-5 md:text-3xl">${node.name}</span>
       <span class="rr-meta tick-label col-span-4 hidden truncate text-fog md:block">${node.meta}</span>
       <span class="rr-live tick-label col-span-1 hidden items-center gap-1.5 text-fog md:flex"><span class="rr-dot h-1 w-1 bg-acid"></span>LIVE</span>
       <span class="col-span-2 flex justify-end md:col-span-1">
-        <svg class="rr-arrow h-5 w-5 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M7 7h10v10"/></svg>
+        <svg class="rr-chev h-5 w-5 text-acid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
       </span>`;
+    /* inline expanding detail — hotkey, dwell, visited state + the actual PORT action */
+    const detail = document.createElement("div");
+    detail.className = "reg-detail";
+    detail.innerHTML = `<div><div class="reg-detail-inner">
+      <span class="tick-label text-fog">${node.meta}</span>
+      <span class="tick-label text-fog">HOTKEY <span class="text-bone">${node.hot ? node.hot.toUpperCase() : "—"}</span></span>
+      <span class="tick-label text-fog">DWELL <span class="rd-dwell text-bone">0.0s</span></span>
+      <span class="tick-label rd-visited text-fog">UNVISITED</span>
+      <button class="rd-port liquid-btn tick-label flex items-center gap-2 border border-acid px-4 py-2 text-acid">
+        <span class="lb-label">PORT → ${node.name}</span>
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M7 7h10v10"/></svg>
+      </button>
+    </div></div>`;
     b.addEventListener("mouseenter", () => { b.classList.add("hot"); hoverLabel.textContent = `→ ${node.id.replace("m-", "").toUpperCase()}`; scramble(b.querySelector(".rr-name"), node.name, 20); });
     b.addEventListener("mouseleave", () => { b.classList.remove("hot"); hoverLabel.textContent = "IDLE"; });
-    b.addEventListener("click", () => { wipeTransport(node.id); pushStatus(`JUMP ${node.n} · ${node.name} · WIPE`, "ok"); });
-    rows.appendChild(b);
+    b.addEventListener("click", () => {
+      const isOpen = wrap.classList.contains("expanded");
+      if (expandedWrap && expandedWrap !== wrap) {
+        expandedWrap.classList.remove("expanded");
+        expandedWrap.querySelector(".reg-row").setAttribute("aria-expanded", "false");
+      }
+      wrap.classList.toggle("expanded", !isOpen);
+      b.setAttribute("aria-expanded", String(!isOpen));
+      expandedWrap = isOpen ? null : wrap;
+      if (!isOpen) {
+        detail.querySelector(".rd-dwell").textContent = ((dwellData.get(node.id) || 0) / 1000).toFixed(1) + "s";
+        const vis = visitedModules.has(node.id);
+        const vEl = detail.querySelector(".rd-visited");
+        vEl.textContent = vis ? "VISITED" : "UNVISITED";
+        vEl.classList.toggle("text-acid", vis);
+      }
+    });
+    detail.querySelector(".rd-port").addEventListener("click", (e) => {
+      e.stopPropagation();
+      wipeTransport(node.id);
+      pushStatus(`JUMP ${node.n} · ${node.name} · WIPE`, "ok");
+    });
+    wrap.appendChild(b);
+    wrap.appendChild(detail);
+    rows.appendChild(wrap);
   });
   const io = new IntersectionObserver(
     (es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
@@ -895,7 +1020,7 @@ $$(".vmq").forEach((wrap) => {
   updaters.push((dt, t) => {
     const r = stage.getBoundingClientRect();
     if (r.top < motion.vh && r.bottom > 0) { progress = clamp01((motion.vh - r.top) / (motion.vh + r.height)); if (t - lastRead > 0.12) { lastRead = t; secEl.textContent = `${pad(Math.round(progress * 100), 3)}%`; const rv = Math.round(motion.velocity); velEl.textContent = `${rv > 0 ? "+" : ""}${rv}`; } }
-    if (!visible) return;
+    if (!visible || motion.reduced) return;
     const v = Math.min(Math.abs(motion.velocity) / 5000, 1);
     rig.rotation.y += dt * (0.08 + v * 0.5); rig.rotation.x += (progress * Math.PI + motion.spy * 0.3 - rig.rotation.x) * 0.07;
     rig.rotation.z += (motion.spx * 0.25 - rig.rotation.z) * 0.06; knot.rotation.x = t * 0.16;
@@ -934,7 +1059,7 @@ function playCharCascade(chars, opts = {}) {
   return new Promise((resolve) => {
     requestAnimationFrame(() => {
       animate(chars, {
-        y: [112, 0],
+        y: ["112%", "0%"],
         opacity: [0, 1],
         rotate: [() => (Math.random() * 20 - 10), 0],
         duration: dur,
@@ -1005,19 +1130,57 @@ $("#ft-top").addEventListener("click", () => {
   const mat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }, uMouse: { value: new THREE.Vector2(0, 0) }, uVel: { value: 0 }, uProg: { value: 0 }, uOver: { value: 0 }, uAcid: { value: new THREE.Color(0.784, 1.0, 0.18) } },
     vertexShader: `void main(){gl_Position=vec4(position,1.0);}`,
-    fragmentShader: `precision mediump float;uniform float uTime;uniform vec2 uRes;uniform vec2 uMouse;uniform float uVel;uniform float uProg;uniform float uOver;uniform vec3 uAcid;float hash(vec2 p){return fract(sin(dot(p,vec2(41.13,289.7)))*43758.5453);}float vnoise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);vec2 u=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);}float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}void main(){vec2 uv=(gl_FragCoord.xy-0.5*uRes)/min(uRes.x,uRes.y);vec2 m=uMouse*0.5;float t=uTime*0.08;vec2 q=uv*1.4+vec2(t,t*0.6);float f=fbm(q+fbm(q+vec2(uProg*2.0,-t))*1.2);vec2 g=uv*22.0;vec2 gi=fract(g)-0.5;float d=1.0-smoothstep(0.02,0.10,length(gi));d*=0.35+0.4*f;float ptr=exp(-length(uv-m)*3.5)*0.55;float streak=smoothstep(0.85,1.0,f)*clamp(abs(uVel)/6000.0,0.0,1.0);vec3 acid=uAcid;vec3 col=vec3(0.03,0.03,0.04);col+=acid*(d*0.28+ptr*0.9+streak*0.6);col+=vec3(0.06,0.06,0.08)*f;if(uOver>0.5){float h=fract(t*0.4+f*0.6);vec3 r=0.5+0.5*cos(6.2831*(h+vec3(0.0,0.33,0.67)));col=mix(col,col*r*1.6,0.55);}col*=0.85-0.35*length(uv)*0.6;gl_FragColor=vec4(col,1.0);}`,
+    fragmentShader: `precision mediump float;uniform float uTime;uniform vec2 uRes;uniform vec2 uMouse;uniform float uVel;uniform float uProg;uniform float uOver;uniform vec3 uAcid;
+float hash(vec2 p){return fract(sin(dot(p,vec2(41.13,289.7)))*43758.5453);}
+float vnoise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);vec2 u=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);}
+float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}
+void main(){
+  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/min(uRes.x,uRes.y);
+  vec2 m=uMouse*0.5;
+  float t=uTime*0.05;
+  float vel=clamp(abs(uVel)/6000.0,0.0,1.0);
+  /* deep space base gradient */
+  vec3 col=mix(vec3(0.010,0.010,0.018),vec3(0.028,0.028,0.044),uv.y+0.5);
+  /* aurora curtains — three fbm-displaced ribbons that drift with scroll progress */
+  for(int i=0;i<3;i++){
+    float fi=float(i);
+    float y=uv.y-0.12+fi*0.17-uProg*0.30;
+    float w=fbm(vec2(uv.x*1.6+t*(0.6+fi*0.35)+fi*7.31, y*2.2-t*0.4));
+    float band=exp(-abs(y+(w-0.5)*0.55)*(7.0-fi*1.4));
+    col+=uAcid*band*(0.050+0.030*fi)*(0.65+vel*0.9);
+  }
+  /* twinkling starfield */
+  vec2 sg=uv*46.0+vec2(t*1.3,0.0);
+  float sh=hash(floor(sg));
+  float star=smoothstep(0.986,1.0,sh)*(0.5+0.5*sin(uTime*(1.5+sh*3.0)+sh*40.0));
+  col+=vec3(0.80,0.85,0.92)*star*0.22;
+  /* pointer aura */
+  float ptr=exp(-length(uv-m)*3.2)*0.5;
+  col+=uAcid*ptr*(0.40+vel*0.5);
+  /* vertical velocity streaks — rain of signal when scrolling fast */
+  float streak=smoothstep(0.72,1.0,fbm(vec2(uv.x*26.0,uv.y*2.0-t*4.0)))*vel;
+  col+=uAcid*streak*0.4;
+  /* overdrive: spectral remix */
+  if(uOver>0.5){float h=fract(t*0.8+fbm(uv*2.0)*0.6);vec3 r=0.5+0.5*cos(6.2831*(h+vec3(0.0,0.33,0.67)));col=mix(col,col*r*1.8,0.55);}
+  /* cinematic vignette */
+  col*=1.0-0.45*dot(uv,uv);
+  gl_FragColor=vec4(col,1.0);
+}`,
   });
   scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
   window.addEventListener("resize", () => { setSize(); mat.uniforms.uRes.value.set(window.innerWidth, window.innerHeight); });
   updaters.push((_dt, t) => {
-    if (host.style.display === "none") return;
+    if (host.style.display === "none" || motion.reduced) return;
     mat.uniforms.uTime.value = t; mat.uniforms.uMouse.value.set(motion.spx, -motion.spy);
     mat.uniforms.uVel.value = motion.velocity; mat.uniforms.uProg.value = motion.docProgress;
     mat.uniforms.uOver.value = document.body.classList.contains("overdrive") ? 1 : 0;
     renderer.render(scene, cam);
   });
-  /* expose so the theme switcher can retint the shader */
+  /* expose so the theme switcher can retint the shader; snapshot re-renders on demand
+     (the buffer is cleared between frames without preserveDrawingBuffer) */
   window.__setShaderAcid = (r, g, b) => { mat.uniforms.uAcid.value.setRGB(r / 255, g / 255, b / 255); };
+  window.__renderFx = () => renderer.render(scene, cam);
+  if (motion.reduced) renderer.render(scene, cam);
 })();
 
 /* ================================================================
@@ -1042,9 +1205,25 @@ $("#ft-top").addEventListener("click", () => {
   window.addEventListener("resize", resize);
   resize();
 
+  /* drifting data motes — sparse glowing pixels that float above the arc */
+  const MOTES = motion.touch ? 26 : 54;
+  const motes = Array.from({ length: MOTES }, () => ({
+    x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 1.8,
+    vx: (Math.random() - 0.5) * 0.012, vy: -(0.004 + Math.random() * 0.014),
+    tw: Math.random() * Math.PI * 2,
+  }));
+
   let t = 0;
   let raf = 0;
+  let frameFlip = false;
   function render() {
+    /* power saver: half-rate when the page is idle and scroll has settled
+       (the last painted frame simply persists on the canvas) */
+    frameFlip = !frameFlip;
+    if (frameFlip && document.body.classList.contains("idle") && Math.abs(motion.velocity) < 40) {
+      raf = requestAnimationFrame(render);
+      return;
+    }
     /* base dark fill */
     ctx.fillStyle = "#030308";
     ctx.fillRect(0, 0, width, height);
@@ -1091,6 +1270,23 @@ $("#ft-top").addEventListener("click", () => {
         ctx.globalAlpha = intensity;
         ctx.fillRect(px, py, pixelSize - 1, pixelSize - 1);
       }
+    }
+    ctx.globalAlpha = 1;
+
+    /* data motes — quantised to the pixel grid so they read as part of the arc field */
+    const drift = 1 + Math.min(Math.abs(motion.velocity) / 4000, 1) * 3;
+    for (const m of motes) {
+      if (!motion.reduced) {
+        m.x += m.vx * 0.016; m.y += m.vy * 0.016 * drift; m.tw += 0.04;
+        if (m.y < -0.02) { m.y = 1.02; m.x = Math.random(); }
+        if (m.x < -0.02) m.x = 1.02; else if (m.x > 1.02) m.x = -0.02;
+      }
+      const gx = Math.floor((m.x * width) / pixelSize) * pixelSize;
+      const gy = Math.floor((m.y * height) / pixelSize) * pixelSize;
+      const glow = 0.22 + 0.5 * Math.abs(Math.sin(m.tw));
+      ctx.globalAlpha = glow * 0.55;
+      ctx.fillStyle = `rgb(${acid.r}, ${acid.g}, ${acid.b})`;
+      ctx.fillRect(gx, gy, Math.max(2, pixelSize * 0.35 * m.s), Math.max(2, pixelSize * 0.35 * m.s));
     }
     ctx.globalAlpha = 1;
     t += motion.reduced ? 0 : 0.02;
@@ -1370,8 +1566,9 @@ async function toggleSynth() {
   const osc2 = synthCtx.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = 55 * 1.5; const osc2Gain = synthCtx.createGain(); osc2Gain.gain.value = 0.2; osc2.connect(osc2Gain).connect(filter); osc2.start(t);
   const lfo = synthCtx.createOscillator(); lfo.frequency.value = 0.15; const lfoGain = synthCtx.createGain(); lfoGain.gain.value = 400; lfo.connect(lfoGain).connect(filter.frequency); lfo.start(t);
   synthNodes = { master, filter, osc1, osc2, lfo }; synthOn = true; pushStatus("SYNTH · AMBIENT LOOP ENGAGED", "ok");
-  updaters.push(() => { if (!synthOn || !synthNodes) return; const v = Math.min(Math.abs(motion.velocity) / 6000, 1); synthNodes.filter.frequency.setTargetAtTime(400 + v * 2400 + motion.docProgress * 900, synthCtx.currentTime, 0.25); const pitch = 55 * (1 + motion.docProgress * 0.6); synthNodes.osc1.frequency.setTargetAtTime(pitch, synthCtx.currentTime, 0.4); synthNodes.osc2.frequency.setTargetAtTime(pitch * 1.5, synthCtx.currentTime, 0.4); });
 }
+/* one persistent updater — guarded, so off→on cycles never stack duplicates */
+updaters.push(() => { if (!synthOn || !synthNodes) return; const v = Math.min(Math.abs(motion.velocity) / 6000, 1); synthNodes.filter.frequency.setTargetAtTime(400 + v * 2400 + motion.docProgress * 900, synthCtx.currentTime, 0.25); const pitch = 55 * (1 + motion.docProgress * 0.6); synthNodes.osc1.frequency.setTargetAtTime(pitch, synthCtx.currentTime, 0.4); synthNodes.osc2.frequency.setTargetAtTime(pitch * 1.5, synthCtx.currentTime, 0.4); });
 window.__toggleSynth = toggleSynth;
 window.__isSoundOn = () => synthOn;
 
@@ -1379,8 +1576,10 @@ async function takeSnapshot() {
   const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1200); const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d");
   ctx.fillStyle = "#030308"; ctx.fillRect(0, 0, w, h);
   const arc = document.querySelector("#arc-layer"); if (arc) { try { ctx.drawImage(arc, 0, 0, w, h); } catch (_) {} }
-  const fx = document.querySelector("#fx-layer canvas"); if (fx) { try { ctx.globalAlpha = 0.3; ctx.drawImage(fx, 0, 0, w, h); ctx.globalAlpha = 1; } catch (_) {} }
-  ctx.fillStyle = "rgba(8,8,10,0.55)"; ctx.fillRect(0, h - 140, w, 140); ctx.fillStyle = "#c8ff2e"; ctx.font = "700 22px monospace"; ctx.fillText("STRINGTUNE × THREE.JS", 24, h - 96);
+  const fx = document.querySelector("#fx-layer canvas"); if (fx) { try { window.__renderFx?.(); ctx.globalAlpha = 0.3; ctx.drawImage(fx, 0, 0, w, h); ctx.globalAlpha = 1; } catch (_) {} }
+  const [tr, tg, tb] = THEME_REGISTRY[currentTheme]?.rgb ?? [200, 255, 46];
+  const accentCss = `rgb(${tr}, ${tg}, ${tb})`;
+  ctx.fillStyle = "rgba(8,8,10,0.55)"; ctx.fillRect(0, h - 140, w, 140); ctx.fillStyle = accentCss; ctx.font = "700 22px monospace"; ctx.fillText("STRINGTUNE × THREE.JS", 24, h - 96);
   ctx.fillStyle = "#e6e6ea"; ctx.font = "12px monospace"; const mod = MODULES[Math.max(0, Math.min(MODULES.length - 1, currentModuleIdx))];
   ctx.fillText(`MODULE ${mod.n} · ${mod.name}   ·   SCROLL ${Math.round(motion.docProgress * 100)}%   ·   ${fpsNow} FPS   ·   THEME ${THEME_LABELS[currentTheme]}`, 24, h - 66);
   ctx.fillStyle = "#8e8e96"; ctx.fillText(new Date().toISOString(), 24, h - 42); ctx.fillText("build · 2026 · one file, zero framework", 24, h - 22);
@@ -1600,14 +1799,13 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       return card;
     });
 
-    /* timeline tick markers */
+    /* timeline tick markers (clicks land on #port-track — ticks are pointer-events: none) */
     ticksWrap.innerHTML = "";
     ticks = NODES.map((node, i) => {
       const t = document.createElement("div");
       t.className = "port-tick";
       t.style.left = `${(i / (NODES.length - 1)) * 100}%`;
       t.innerHTML = `<span class="port-tick-label">${node.n}</span>`;
-      t.addEventListener("click", (e) => { e.stopPropagation(); select(i); });
       ticksWrap.appendChild(t);
       return t;
     });
@@ -1638,7 +1836,7 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     cards.forEach((card, i) => {
       const offset = i - deckPos;   /* fractional — enables smooth sub-integer motion */
       const abs = Math.abs(offset);
-      const dim = filterStr && !matches(i);
+      const dimmed = filterStr && !matches(i);
       /* diagonal filmstrip: cards cascade up-and-right into depth */
       const x = offset * sx;
       const y = offset * sy;
@@ -1646,15 +1844,15 @@ $("#ft-export")?.addEventListener("click", exportJSON);
       const rot = offset * -3;
       const scale = Math.max(0.4, 1 - abs * 0.07);
       let opacity = abs > 7 ? 0 : Math.max(0.06, 1 - abs * 0.13);
-      if (dim) opacity *= 0.12;
+      if (dimmed) opacity *= 0.12;
       card.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rot}deg) scale(${scale})`;
       card.style.opacity = String(opacity);
       card.style.zIndex = String(1000 - Math.round(abs));
       /* "front" state only when we're within half a step of the discrete selected index */
       const isFront = i === selected && Math.abs(deckPos - selected) < 0.5;
       card.classList.toggle("front", isFront);
-      card.classList.toggle("dof", abs >= 2.5 && !dim);
-      card.classList.toggle("filtered-out", dim);
+      card.classList.toggle("dof", abs >= 2.5 && !dimmed);
+      card.classList.toggle("filtered-out", dimmed);
       const node = NODES[i];
       const visited = visitedModules.has(node.id);
       card.classList.toggle("visited", visited);
@@ -1712,12 +1910,14 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     updateReadout();
   }
 
-  /* fractional target — used by wheel/drag scrubbing; snaps selected to nearest */
+  /* fractional target — used by wheel/drag scrubbing; snaps selected to nearest.
+     With a filter active, never land the selection on a filtered-out node. */
   function scrubTo(pos) {
     if (busy) return;
     deckTarget = Math.max(0, Math.min(NODES.length - 1, pos));
     const rounded = Math.round(deckTarget);
     if (rounded !== selected) {
+      if (filterStr && !matches(rounded)) return; /* keep last matching selection */
       selected = rounded;
       updateReadout();
     }
@@ -2051,7 +2251,8 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     if (e.key === "Home") { e.preventDefault(); e.stopPropagation(); select(0); return; }
     if (e.key === "End") { e.preventDefault(); e.stopPropagation(); select(NODES.length - 1); return; }
     if (e.key === "Backspace") { e.preventDefault(); e.stopPropagation(); filterStr = filterStr.slice(0, -1); applyFilter(); return; }
-    /* printable char → type-to-filter */
+    /* printable char → type-to-filter (never swallow browser shortcuts like ⌘R/Ctrl+C) */
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key.length === 1 && /[a-z0-9 +]/i.test(e.key)) {
       e.preventDefault(); e.stopPropagation();
       filterStr += e.key;
@@ -2238,11 +2439,11 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 })();
 
 /* ================================================================
-   36. FOREGROUND INK TRAIL (cursor smear, screen-blend overlay)
+   36. FOREGROUND RIBBON TRAIL (elastic line that chases the cursor)
 ================================================================ */
 
-(function inkTrail() {
-  if (motion.reduced) return;
+(function ribbonTrail() {
+  if (motion.reduced || motion.touch) return;
   const canvas = $("#ink-trail");
   const ctx = canvas.getContext("2d");
   let w = 0, h = 0;
@@ -2250,37 +2451,55 @@ $("#ft-export")?.addEventListener("click", exportJSON);
   resize();
   window.addEventListener("resize", resize);
 
-  const blobs = [];
   let accent = [200, 255, 46];
-  /* sync accent from the css var each ~1s */
   window.setInterval(() => {
     const raw = getComputedStyle(document.documentElement).getPropertyValue("--acid-rgb");
     if (raw) accent = raw.trim().split(" ").map(Number);
   }, 1000);
 
+  /* chain of points — head chases the cursor, each link chases the previous
+     with spring lag, producing an elastic ribbon */
+  const LINKS = 22;
+  const pts = Array.from({ length: LINKS }, () => ({ x: -100, y: -100, vx: 0, vy: 0 }));
+  let tx = -100, ty = -100, seen = false;
   window.addEventListener("pointermove", (e) => {
-    const v = Math.min(Math.abs(motion.pointerV) / 4000, 1);
-    const r = 6 + v * 26;
-    blobs.push({ x: e.clientX + (Math.random() - 0.5) * 8, y: e.clientY + (Math.random() - 0.5) * 8, r, life: 1, decay: 1.4 + Math.random() });
-    if (blobs.length > 48) blobs.shift();
-  });
+    tx = e.clientX; ty = e.clientY;
+    if (!seen) { seen = true; pts.forEach((p) => { p.x = tx; p.y = ty; }); }
+  }, { passive: true });
 
   updaters.push((dt) => {
     ctx.clearRect(0, 0, w, h);
-    ctx.globalCompositeOperation = "lighter";
-    for (let i = blobs.length - 1; i >= 0; i--) {
-      const b = blobs[i];
-      b.life -= b.decay * dt;
-      if (b.life <= 0) { blobs.splice(i, 1); continue; }
-      const a = b.life * 0.13;
-      const rad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * (2 - b.life));
-      rad.addColorStop(0, `rgba(${accent[0]},${accent[1]},${accent[2]},${a})`);
-      rad.addColorStop(1, `rgba(${accent[0]},${accent[1]},${accent[2]},0)`);
-      ctx.fillStyle = rad;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * (2 - b.life), 0, Math.PI * 2);
-      ctx.fill();
+    if (!seen) return;
+    const k = 34, damp = 16;
+    let px = tx, py = ty;
+    for (const p of pts) {
+      p.vx += (px - p.x) * k * dt; p.vy += (py - p.y) * k * dt;
+      const d = Math.exp(-damp * dt); p.vx *= d; p.vy *= d;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      px = p.x; py = p.y;
     }
+    /* speed → intensity; ribbon fades out when the cursor rests */
+    const speed = Math.min(motion.pointerV / 2600, 1);
+    if (speed < 0.015) return;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.globalCompositeOperation = "lighter";
+    /* taper: draw segments back-to-front with shrinking width + alpha */
+    for (let i = LINKS - 1; i > 0; i--) {
+      const t0 = i / LINKS;
+      ctx.strokeStyle = `rgba(${accent[0]},${accent[1]},${accent[2]},${(1 - t0) * 0.5 * speed})`;
+      ctx.lineWidth = (1 - t0) * 7 * (0.4 + speed);
+      ctx.beginPath();
+      ctx.moveTo(pts[i].x, pts[i].y);
+      const mx = (pts[i].x + pts[i - 1].x) / 2, my = (pts[i].y + pts[i - 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+      ctx.lineTo(pts[i - 1].x, pts[i - 1].y);
+      ctx.stroke();
+    }
+    /* bright head node */
+    ctx.fillStyle = `rgba(${accent[0]},${accent[1]},${accent[2]},${0.75 * speed})`;
+    ctx.beginPath();
+    ctx.arc(pts[0].x, pts[0].y, 2.4 + speed * 2.6, 0, Math.PI * 2);
+    ctx.fill();
   });
 })();
 
@@ -2304,3 +2523,5 @@ $("#ft-export")?.addEventListener("click", exportJSON);
 })();
 
 void booted;
+/* liquid fills — bind once everything (incl. registry details) is in the DOM */
+bindLiquid();

@@ -68,6 +68,10 @@ body {
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: var(--color-ink); }
 ::-webkit-scrollbar-thumb { background: var(--color-line2); border: 3px solid var(--color-ink); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-acid); }
+
+/* keyboard focus — same acid annotation language as the hover states */
+:focus-visible { outline: 2px dotted var(--color-acid); outline-offset: 3px; }
 
 .noise-layer {
   pointer-events: none;
@@ -98,9 +102,13 @@ section h2.rv, footer h2.rv, header h2.rv { font-variation-settings: "wght" 580;
 section h2.rv::after, footer h2.rv::after { content: " _"; color: var(--color-acid); animation: blink 1.1s steps(2) infinite; -webkit-text-stroke: 0; }
 
 #arc-layer { z-index: -10; }
-#fx-layer { z-index: 0; opacity: 0.28; mix-blend-mode: screen; }
+#fx-layer { z-index: 0; opacity: 0.5; mix-blend-mode: screen; }
 #fx-layer canvas { width: 100%; height: 100%; }
 body > header, body > section, body > footer { position: relative; z-index: 1; }
+
+/* aurora depth veil — lets the shader glow bleed through section gaps while
+   keeping text panels readable */
+body > section[data-module] { background: color-mix(in srgb, var(--color-ink) 38%, transparent); }
 
 #hero-dial-svg { animation: rot 14s linear infinite; }
 
@@ -117,8 +125,8 @@ body.booted .h-fade { opacity: 1; transform: none; transition: opacity 0.8s ease
 .hud-in { transform: var(--hud-t, none); opacity: 0; transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.15s, opacity 0.6s ease 0.15s; }
 body.booted .hud-in { transform: none; opacity: 1; }
 
-.rv { opacity: 0; transform: translateY(40px); transition: opacity 0.9s ease var(--rvd, 0s), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) var(--rvd, 0s); will-change: transform, opacity; }
-.rv.in { opacity: 1; transform: none; }
+.rv { opacity: 0; transform: translateY(40px); filter: blur(7px); transition: opacity 0.9s ease var(--rvd, 0s), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) var(--rvd, 0s), filter 0.9s ease var(--rvd, 0s); will-change: transform, opacity, filter; }
+.rv.in { opacity: 1; transform: none; filter: blur(0); }
 
 .reg-row { cursor: pointer; }
 .reg-row.hot { background: var(--color-acid); }
@@ -126,8 +134,9 @@ body.booted .hud-in { transform: none; opacity: 1; }
 .reg-row.hot .rr-name { color: var(--color-ink); }
 .reg-row.hot .rr-live { color: var(--color-ink); }
 .reg-row.hot .rr-dot { background: var(--color-ink); }
-.reg-row.hot .rr-arrow { color: var(--color-ink); transform: translate(2px, -2px); }
-.rr-arrow { transition: transform 0.3s ease, color 0.3s ease; }
+.reg-row.hot .rr-arrow, .reg-row.hot .rr-chev { color: var(--color-ink); transform: translate(2px, -2px); }
+.reg-row.hot .rr-chev { transform: none; }
+.rr-arrow, .rr-chev { transition: transform 0.3s ease, color 0.3s ease; }
 
 .mag-btn.hot { border-color: var(--color-acid); background: var(--color-acid); color: var(--color-ink); }
 .mag-btn.hot .mag-ico { color: var(--color-ink); }
@@ -143,8 +152,25 @@ body.booted .hud-in { transform: none; opacity: 1; }
 .seq-step.lit .tick-label { color: var(--color-acid); }
 .seq-step.lit > div { color: var(--color-bone); }
 
-.rail-tick { display: block; height: 2px; width: 12px; background: var(--color-line2); transition: width 0.3s ease, background 0.3s ease, height 0.3s ease; }
-.rail-tick.on { height: 3px; width: 24px; background: var(--color-acid); }
+/* ==================== PROGRESS SPINE (right edge) ==================== */
+#rail { height: min(52vh, 460px); width: 18px; }
+#spine-track { position: absolute; right: 8px; top: 0; bottom: 0; width: 1px; background: var(--color-line2); }
+#spine-fill { position: absolute; right: 8px; top: 0; width: 1px; height: 0%; background: var(--color-acid); box-shadow: 0 0 10px rgba(var(--acid-rgb), 0.8); transition: height 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.spine-node { position: absolute; right: 4px; width: 9px; height: 9px; transform: translateY(-50%); background: none; border: 0; padding: 0; }
+.spine-dot { position: absolute; inset: 2px; background: var(--color-line2); transition: background 0.3s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease; }
+.spine-node.passed .spine-dot { background: var(--color-acid-dim); }
+.spine-node.on .spine-dot { background: var(--color-acid); transform: scale(1.9) rotate(45deg); box-shadow: 0 0 12px rgba(var(--acid-rgb), 0.9); }
+.spine-label { position: absolute; right: 16px; top: 50%; transform: translateY(-50%) translateX(6px); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-fog); white-space: nowrap; opacity: 0; transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1); pointer-events: none; background: color-mix(in srgb, var(--color-ink) 85%, transparent); padding: 2px 6px; border: 1px solid var(--color-line); }
+.spine-node:hover .spine-label, .spine-node.on .spine-label { opacity: 1; transform: translateY(-50%) translateX(0); }
+.spine-node.on .spine-label { color: var(--color-acid); border-color: color-mix(in srgb, var(--color-acid) 40%, transparent); }
+
+/* ==================== MORPHING NAVBAR ==================== */
+#nav-inner { transition: height 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+#nav-mark { transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+#hud-top { transition: background-color 0.4s ease, border-color 0.4s ease, transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.15s, opacity 0.6s ease 0.15s; }
+#hud-top.nav-compact #nav-inner { height: 38px; }
+#hud-top.nav-compact { background: color-mix(in srgb, var(--color-ink) 88%, transparent); border-color: color-mix(in srgb, var(--color-acid) 18%, var(--color-line)); }
+#hud-top.nav-compact #nav-mark { transform: scale(0.8) rotate(45deg); }
 
 #reticle { display: none; }
 @media (pointer: fine) { #reticle { display: block; } }
@@ -312,6 +338,31 @@ body.porting > header[data-module], body.porting > section[data-module], body.po
   #hero-dial-svg, body.overdrive { animation: none; }
 }
 
+/* ==================== BENTO STATS GRID ==================== */
+.bento { position: relative; overflow: hidden; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.35s ease, box-shadow 0.45s ease; }
+.bento:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--color-acid) 45%, var(--color-line)); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 0 1px color-mix(in srgb, var(--color-acid) 25%, transparent) inset; }
+.bento::before { content: ""; position: absolute; inset: 0; background: radial-gradient(320px circle at var(--bx, 50%) var(--by, 0%), color-mix(in srgb, var(--color-acid) 9%, transparent), transparent 70%); opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }
+.bento:hover::before { opacity: 1; }
+
+/* ==================== EXPANDING REGISTRY ROWS ==================== */
+.reg-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+.reg-detail > div { overflow: hidden; }
+.reg-row-wrap.expanded .reg-detail { grid-template-rows: 1fr; }
+.reg-detail-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 0 20px; border-bottom: 1px solid var(--color-line); background: color-mix(in srgb, var(--color-panel) 70%, transparent); opacity: 0; transform: translateY(-8px); transition: opacity 0.4s ease 0.1s, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s, padding 0.4s ease; }
+.reg-row-wrap.expanded .reg-detail-inner { opacity: 1; transform: none; padding: 18px 20px; }
+@media (min-width: 768px) { .reg-detail-inner { padding-inline: 40px; } .reg-row-wrap.expanded .reg-detail-inner { padding: 20px 40px; } }
+.reg-row-wrap.expanded .reg-row { background: color-mix(in srgb, var(--color-acid) 6%, transparent); }
+.reg-row .rr-chev { transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.reg-row-wrap.expanded .rr-chev { transform: rotate(180deg); }
+
+/* ==================== 3D FLIP SPEC CARDS ==================== */
+.flip-card { perspective: 900px; background: none; border: 0; padding: 0; text-align: left; width: 100%; }
+.flip-inner { position: relative; width: 100%; height: 100%; min-height: 92px; transform-style: preserve-3d; transition: transform 0.7s cubic-bezier(0.34, 1.3, 0.5, 1); }
+.flip-card:hover .flip-inner, .flip-card:focus-visible .flip-inner { transform: rotateY(180deg); }
+.flip-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: var(--color-panel); padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
+.flip-back { transform: rotateY(180deg); border: 1px solid color-mix(in srgb, var(--color-acid) 35%, transparent); background: color-mix(in srgb, var(--color-acid) 7%, var(--color-panel)); }
+@media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }
+
 /* ==================== DOTTED-ANNOTATION HOVER ==================== */
 .dot-hover { position: relative; }
 .dot-hover:hover {
@@ -325,6 +376,9 @@ body.porting > header[data-module], body.porting > section[data-module], body.po
   transition: font-variation-settings 0.12s linear;
   will-change: font-variation-settings;
 }
+
+/* ==================== KINETIC HERO HEADLINE ==================== */
+.hk { display: inline-block; font-variation-settings: "wght" 500; }
 
 /* ==================== STATEMENT (pinned typography) ==================== */
 .stmt-word {
@@ -348,6 +402,28 @@ body.porting > header[data-module], body.porting > section[data-module], body.po
 @keyframes sndPulse { 0%, 100% { height: 2px; } 50% { height: 12px; } }
 #sound-open.on { border-color: var(--color-acid); color: var(--color-acid); }
 #sound-open.on .snd-bar { background: var(--color-acid); }
+
+/* ==================== LIQUID BUTTONS ==================== */
+.liquid-btn { position: relative; overflow: hidden; isolation: isolate; transition: color 0.35s ease, border-color 0.35s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.liquid-btn::before { content: ""; position: absolute; left: var(--lx, 50%); top: var(--ly, 50%); width: 0; height: 0; border-radius: 50%; transform: translate(-50%, -50%); background: var(--color-acid); transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1), height 0.5s cubic-bezier(0.22, 1, 0.36, 1); z-index: -1; }
+.liquid-btn:hover::before { width: 320%; height: 320%; }
+.liquid-btn:hover { color: var(--color-ink) !important; border-color: var(--color-acid) !important; }
+.liquid-btn:hover svg, .liquid-btn:hover span { color: var(--color-ink) !important; }
+.liquid-btn:active { transform: scale(0.94); }
+@media (prefers-reduced-motion: reduce) { .liquid-btn::before { transition: none; } }
+
+/* ==================== TOAST STATUS CONSOLE ==================== */
+.toast { position: relative; overflow: hidden; border: 1px solid var(--color-line); background: color-mix(in srgb, var(--color-ink) 88%, transparent); backdrop-filter: blur(8px); padding: 8px 12px 10px; display: flex; align-items: center; gap: 8px; animation: toastIn 0.45s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.toast.leaving { animation: toastOut 0.35s cubic-bezier(0.55, 0, 0.55, 0.2) forwards; }
+.toast .toast-idx { flex-shrink: 0; font-size: 9px; opacity: 0.5; }
+.toast .toast-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast::after { content: ""; position: absolute; bottom: 0; left: 0; height: 2px; width: 100%; background: currentColor; opacity: 0.55; transform-origin: left; animation: toastBar var(--toast-life, 4.2s) linear forwards; }
+.toast.tone-ok { border-color: color-mix(in srgb, var(--color-acid) 45%, var(--color-line)); }
+.toast.tone-warn { border-color: color-mix(in srgb, #f87171 55%, var(--color-line)); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(28px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(24px) scale(0.96); } }
+@keyframes toastBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .toast, .toast.leaving { animation-duration: 0.01s; } }
 
 /* ==================== INK TRAIL ==================== */
 @media (prefers-reduced-motion: reduce) { #ink-trail { display: none; } }
