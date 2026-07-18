@@ -138,9 +138,16 @@
 
     <!-- ==================== HUD ==================== -->
     <div id="reticle" aria-hidden="true" class="pointer-events-none fixed left-0 top-0 z-[80] mix-blend-difference">
-      <div class="relative -translate-x-1/2 -translate-y-1/2">
-        <div class="h-8 w-8 rounded-full border border-bone/70"></div>
-        <div class="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 bg-acid"></div>
+      <div class="ret-core">
+        <span class="ret-dot"></span>
+        <span class="ret-tick ret-n"></span>
+        <span class="ret-tick ret-e"></span>
+        <span class="ret-tick ret-s"></span>
+        <span class="ret-tick ret-w"></span>
+        <span class="ret-br ret-tl"></span>
+        <span class="ret-br ret-tr"></span>
+        <span class="ret-br ret-bl"></span>
+        <span class="ret-br ret-brc"></span>
       </div>
     </div>
     <div aria-hidden="true" class="noise-layer"></div>

@@ -382,18 +382,25 @@ $("#gl-dpr").textContent = motion.dpr.toFixed(1);
   window.setInterval(tick, 1000);
 })();
 
-/* FIX #1: cursor reticle — proper state with tx/ty initialised */
+/* cursor reticle — targeting frame that locks onto interactive elements
+   and stretches with pointer velocity */
 if (!motion.touch) {
   const ret = $("#reticle");
+  const HOT_SEL = "a, button, [role='button'], .reg-row, .cmdk-item, .port-card, .theme-swatch, .mag-btn, .drag-chip, input, #port-track";
   let retX = -100, retY = -100, targetX = -100, targetY = -100;
   window.addEventListener("pointermove", (e) => {
     targetX = e.clientX;
     targetY = e.clientY;
+    ret.classList.toggle("hot", !!e.target?.closest?.(HOT_SEL));
   }, { passive: true });
+  let lastV = -1;
   updaters.push(() => {
     retX += (targetX - retX) * 0.22;
     retY += (targetY - retY) * 0.22;
     ret.style.transform = `translate(${retX}px, ${retY}px)`;
+    /* velocity → frame stretch, quantised to avoid style churn */
+    const v = Math.round(Math.min(motion.pointerV / 3000, 1) * 20) / 20;
+    if (v !== lastV) { lastV = v; ret.style.setProperty("--retv", String(v)); }
   });
 }
 
@@ -1046,10 +1053,16 @@ $("#ft-top").addEventListener("click", () => {
 
     const cols = Math.ceil(width / pixelSize);
     const rows = Math.ceil(height / pixelSize);
-    /* arc lives lower on the page; scroll progress lifts it slightly */
-    const arcCenterY = height * (0.78 - motion.docProgress * 0.12);
-    const arcDrop = height * 0.9;
-    const thickness = height * 0.36;
+    /* variable background — the arc morphs across the journey:
+       hero: low wide bowl → midpage: flat horizon band → outro: high dome */
+    const prog = motion.docProgress;
+    const arcCenterY = height * (0.82 - prog * 0.58);
+    /* curvature eases from bowl (+) through flat (0) to dome (−) */
+    const arcDrop = height * 0.9 * Math.cos(prog * Math.PI);
+    const thickness = height * (0.36 - prog * 0.12);
+    /* wave detail tightens as the transmission progresses */
+    const waveFreq = 4 + prog * 7;
+    const waveSpeed = 1.5 + prog * 1.2;
     /* velocity spreads the band */
     const velBoost = Math.min(Math.abs(motion.velocity) / 6000, 1) * 0.12;
 
@@ -1064,7 +1077,7 @@ $("#ft-top").addEventListener("click", () => {
         const distToCurve = Math.abs(py - curveY);
         let intensity = Math.max(0, 1 - distToCurve / (thickness * (1 + velBoost)));
         if (intensity <= 0.01) continue;
-        const wave1 = Math.sin(nx * 4 - t * 1.5) * 0.1;
+        const wave1 = Math.sin(nx * waveFreq - t * waveSpeed) * 0.1;
         const wave2 = Math.cos(py * 0.01 + t) * 0.1;
         intensity = Math.max(0, Math.min(1, intensity + wave1 + wave2)) * edgeFade;
         if (intensity <= 0.02) continue;

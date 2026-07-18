@@ -51,6 +51,19 @@ body {
   position: relative;
 }
 
+/* ---- cursor system: crosshair base, targeting variants per surface ---- */
+@media (pointer: fine) {
+  body { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg stroke='%23e6e6ea' stroke-width='1.5'%3E%3Cline x1='12' y1='2' x2='12' y2='9'/%3E%3Cline x1='12' y1='15' x2='12' y2='22'/%3E%3Cline x1='2' y1='12' x2='9' y2='12'/%3E%3Cline x1='15' y1='12' x2='22' y2='12'/%3E%3C/g%3E%3Crect x='11' y='11' width='2' height='2' fill='%23c8ff2e'/%3E%3C/svg%3E") 12 12, crosshair; }
+  a, button, [role="button"], .reg-row, .cmdk-item, .port-card, .port-tick, #port-track, .theme-swatch, .mag-btn, label, select, summary {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cg fill='none' stroke='%23c8ff2e' stroke-width='1.5'%3E%3Cpath d='M3 8V3h5'/%3E%3Cpath d='M18 3h5v5'/%3E%3Cpath d='M23 18v5h-5'/%3E%3Cpath d='M8 23H3v-5'/%3E%3C/g%3E%3Crect x='12' y='12' width='2' height='2' fill='%23c8ff2e'/%3E%3C/svg%3E") 13 13, pointer;
+  }
+  input[type="text"], textarea, #cmdk-input {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='22' viewBox='0 0 18 22'%3E%3Cg stroke='%23e6e6ea' stroke-width='1.5'%3E%3Cline x1='9' y1='3' x2='9' y2='19'/%3E%3Cline x1='5' y1='2' x2='13' y2='2'/%3E%3Cline x1='5' y1='20' x2='13' y2='20'/%3E%3C/g%3E%3C/svg%3E") 9 11, text;
+  }
+  .drag-chip { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cg fill='none' stroke='%23e6e6ea' stroke-width='1.5'%3E%3Cpath d='M13 2l3 4h-6z' fill='%23e6e6ea' stroke='none'/%3E%3Cpath d='M13 24l-3-4h6z' fill='%23e6e6ea' stroke='none'/%3E%3Cpath d='M2 13l4-3v6z' fill='%23e6e6ea' stroke='none'/%3E%3Cpath d='M24 13l-4 3v-6z' fill='%23e6e6ea' stroke='none'/%3E%3C/g%3E%3Crect x='12' y='12' width='2' height='2' fill='%23c8ff2e'/%3E%3C/svg%3E") 13 13, grab; }
+  #port-stage { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='14' viewBox='0 0 28 14'%3E%3Cg fill='%23c8ff2e'%3E%3Cpath d='M8 2L2 7l6 5V8h12v4l6-5-6-5v4H8z'/%3E%3C/g%3E%3C/svg%3E") 14 7, grab !important; }
+}
+
 ::selection { background: var(--color-acid); color: var(--color-ink); }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: var(--color-ink); }
@@ -75,6 +88,14 @@ body {
 .mask-fade-x { mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent); }
 .tick-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
 canvas { display: block; }
+
+/* ---- editorial voice: text outside the demo stages ----
+   prose paragraphs read as annotated source comments; section headings get a
+   heavier cut of the variable display face */
+p.rv { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8; letter-spacing: 0.015em; color: color-mix(in oklab, var(--color-fog) 88%, var(--color-bone)); }
+p.rv::before { content: "// "; color: var(--color-acid); }
+section h2.rv, footer h2.rv, header h2.rv { font-variation-settings: "wght" 580; letter-spacing: -0.04em; text-wrap: balance; }
+section h2.rv::after, footer h2.rv::after { content: " _"; color: var(--color-acid); animation: blink 1.1s steps(2) infinite; -webkit-text-stroke: 0; }
 
 #arc-layer { z-index: -10; }
 #fx-layer { z-index: 0; opacity: 0.28; mix-blend-mode: screen; }
@@ -127,6 +148,24 @@ body.booted .hud-in { transform: none; opacity: 1; }
 
 #reticle { display: none; }
 @media (pointer: fine) { #reticle { display: block; } }
+/* targeting-frame reticle — brackets tighten and rotate on interactive hover */
+.ret-core { position: relative; width: 44px; height: 44px; transform: translate(-50%, -50%); transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+.ret-dot { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; transform: translate(-50%, -50%); background: var(--color-acid); }
+.ret-tick { position: absolute; background: rgb(230 230 234 / 0.65); transition: opacity 0.2s ease; }
+.ret-n, .ret-s { left: 50%; width: 1px; height: 7px; margin-left: -0.5px; }
+.ret-e, .ret-w { top: 50%; width: 7px; height: 1px; margin-top: -0.5px; }
+.ret-n { top: 0; } .ret-s { bottom: 0; } .ret-w { left: 0; } .ret-e { right: 0; left: auto; }
+.ret-br { position: absolute; width: 9px; height: 9px; border: 1px solid var(--color-acid); opacity: 0; transition: opacity 0.2s ease; }
+.ret-tl { left: 4px; top: 4px; border-right: none; border-bottom: none; }
+.ret-tr { right: 4px; top: 4px; border-left: none; border-bottom: none; }
+.ret-bl { left: 4px; bottom: 4px; border-right: none; border-top: none; }
+.ret-brc { right: 4px; bottom: 4px; border-left: none; border-top: none; }
+/* hover state (class set from JS) — brackets in, ticks out, slight spin-up */
+#reticle.hot .ret-core { transform: translate(-50%, -50%) scale(0.8) rotate(45deg); }
+#reticle.hot .ret-br { opacity: 1; }
+#reticle.hot .ret-tick { opacity: 0; }
+/* velocity stretch (JS drives --retv 0..1) */
+.ret-core { scale: calc(1 + var(--retv, 0) * 0.5); }
 
 .vmq-row { display: flex; flex-shrink: 0; align-items: center; }
 .spark-bar { width: 100%; max-width: 6px; }
