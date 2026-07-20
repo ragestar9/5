@@ -1,6 +1,12 @@
 import "./index.css";
 import Lenis from "lenis";
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader.js";
 import { animate, stagger } from "animejs";
 import { bindTelemetry, clamp01, motion } from "./lib/motion.js";
 
@@ -27,6 +33,8 @@ const MODULES = [
   { id: "m-magnetic", n: "07",   name: "MAGNETIC",    meta: "Pointer pull",               hot: "7" },
   { id: "m-spotlight",n: "08",   name: "SPOTLIGHT",   meta: "3D lit surface",             hot: "8" },
   { id: "m-webgl",    n: "+3D",  name: "WEBGL",       meta: "Torus-knot rig",             hot: "9" },
+  { id: "m-flythrough",n:"+F",   name: "PATHMAP",     meta: "Route overview / you are here", hot: null },
+  { id: "m-grid",     n: "+G",   name: "GRID",        meta: "Cursor field distortion",    hot: null },
   { id: "m-impulse",  n: "09",   name: "IMPULSE",     meta: "Velocity → springs",         hot: "0" },
   { id: "m-drag",     n: "+D",   name: "DRAG",        meta: "Momentum + rest spring",     hot: null },
   { id: "m-statement",n: "+S",   name: "STATEMENT",   meta: "Pinned typographic moment",  hot: null },
@@ -45,8 +53,59 @@ const scrollToId = (id) => {
   else el.scrollIntoView({ behavior: motion.reduced ? "auto" : "smooth" });
 };
 
-/* ---- PORT WIPE: shutter teleport — hides the travel ---- */
+/* ---- MODULE TRANSPORT: hyperspeed dash — you SEE the travel.
+   The camera flies the world spline to the destination station (~0.9s) with
+   an FOV kick and dust streaks while the DOM dims, teleports behind the blur
+   and fades back in at arrival. The DOM shutter remains as the fallback for
+   reduced motion / world off / no WebGL. ---- */
 let wipeBusy = false;
+
+function flyDash(id, el) {
+  const fly = window.__fly;
+  const toT = fly.tOf(id);
+  wipeBusy = true;
+  if (lenis) lenis.stop(); else document.documentElement.classList.add("boot-lock");
+  const jump = () => {
+    if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, immediate: true, force: true });
+    else { window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 46); }
+  };
+  const finish = () => {
+    fly.clearOverride();
+    if (lenis) lenis.start(); else document.documentElement.classList.remove("boot-lock");
+    wipeBusy = false;
+  };
+  /* dim the page chrome so the world carries the moment */
+  document.body.classList.add("dashing");
+  const fromT = fly.pos;
+  const dist = Math.abs(toT - fromT);
+  const dur = 500 + Math.min(700, dist * 2600); /* longer hops fly longer, capped */
+  const st = { t: fromT };
+  fly.heat(1);
+  return new Promise((resolve) => {
+    animate(st, {
+      t: toT,
+      duration: dur,
+      ease: "inOut(3)",
+      onUpdate: () => {
+        fly.setOverride(st.t);
+        fly.heat(Math.min(1, dist * 30)); /* keep streaks hot while moving */
+      },
+      onComplete: () => {
+        /* DOM teleports at arrival, hidden under the dim */
+        jump();
+        window.setTimeout(() => {
+          /* undashing keeps the transition rule alive through the fade-back */
+          document.body.classList.add("undashing");
+          document.body.classList.remove("dashing");
+          window.setTimeout(() => document.body.classList.remove("undashing"), 340);
+          finish();
+          resolve(true);
+        }, 180);
+      },
+    });
+  });
+}
+
 function wipeTransport(id) {
   const el = document.getElementById(id);
   if (!el) return Promise.resolve(false);
@@ -55,17 +114,25 @@ function wipeTransport(id) {
     else el.scrollIntoView();
     return Promise.resolve(true);
   }
+  /* the dash IS the transition when the world is up */
+  if (window.__fly && !document.body.classList.contains("no-fx") && window.__fly.tOf(id) !== null) {
+    return flyDash(id, el);
+  }
   wipeBusy = true;
-  const wipe = $("#port-wipe");
-  const top = $("#wipe-top");
-  const bot = $("#wipe-bot");
-  const scan = $("#wipe-scan");
-  wipe.classList.remove("hidden");
   if (lenis) lenis.stop(); else document.documentElement.classList.add("boot-lock");
   const jump = () => {
     if (motion.lenis) motion.lenis.scrollTo(el, { offset: -46, immediate: true, force: true });
     else { window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 46); }
   };
+  const finish = () => {
+    if (lenis) lenis.start(); else document.documentElement.classList.remove("boot-lock");
+    wipeBusy = false;
+  };
+  const wipe = $("#port-wipe");
+  const top = $("#wipe-top");
+  const bot = $("#wipe-bot");
+  const scan = $("#wipe-scan");
+  wipe.classList.remove("hidden");
   return new Promise((resolve) => {
     /* panels close */
     animate(top, { y: ["-105%", "0%"], duration: 320, ease: "inOut(4)" });
@@ -83,8 +150,7 @@ function wipeTransport(id) {
         scan.style.opacity = "0";
         top.style.transform = "translateY(-105%)";
         bot.style.transform = "translateY(105%)";
-        if (lenis) lenis.start(); else document.documentElement.classList.remove("boot-lock");
-        wipeBusy = false;
+        finish();
         resolve(true);
       } });
     }, 460);
@@ -138,6 +204,8 @@ function scramble(el, str, speed = 22) {
 const updaters = [];
 /* three.js materials that follow the theme accent */
 const themedMaterials = [];
+/* ShaderMaterial uAcid uniforms (Color) that follow the theme accent */
+const themedAcidUniforms = [];
 let fpsNow = 0;
 let booted = false;
 
@@ -235,9 +303,10 @@ requestAnimationFrame(master);
 ================================================================ */
 
 const BOOT_LINES = [
-  "STRINGREVEAL", "STRINGPARALLAX", "STRINGPROGRESS", "STRINGLERP", "STRINGGLIDE",
-  "STRINGCURSOR", "STRINGMAGNETIC", "STRINGSPOTLIGHT", "LONGSTRING.GL", "STRINGIMPULSE",
-  "STRINGSPLIT", "STRINGSEQUENCE", "STRINGDIAG", "WEBGL CONTEXT", "GPU BUFFERS", "RAF LOOP",
+  "STRINGFLY WORLD", "CAMERA SPLINE", "STATION GRID", "STRINGREVEAL", "STRINGPARALLAX",
+  "STRINGPROGRESS", "STRINGLERP", "STRINGGLIDE", "STRINGCURSOR", "STRINGMAGNETIC",
+  "STRINGSPOTLIGHT", "LONGSTRING.GL", "STRINGIMPULSE", "STRINGSPLIT", "STRINGSEQUENCE",
+  "STRINGDIAG", "WEBGL CONTEXT", "GPU BUFFERS", "RAF LOOP",
 ];
 
 document.documentElement.classList.add("boot-lock");
@@ -247,7 +316,10 @@ document.documentElement.classList.add("boot-lock");
   const line = $("#boot-line");
   const mod = $("#boot-mod");
   const status = $("#boot-status");
-  const bar = $("#boot-bar");
+  const hexProg = $("#boot-hex-prog");
+  const hexSpin = $("#boot-hex-spin");
+  /* hexagon spinner — anime.js rotates the inner dashed ring while loading */
+  const spinJob = motion.reduced ? null : animate(hexSpin, { rotate: 360, duration: 2600, ease: "linear", loop: true });
   const brand = $("#boot-brand");
   const product = $("#boot-product");
   const divider = $("#boot-divider");
@@ -304,10 +376,11 @@ document.documentElement.classList.add("boot-lock");
         const p = Math.round(state.pct);
         count.textContent = pad(p, 3);
         mod.textContent = pad(Math.min(16, Math.floor((p / 100) * 16) + 1), 2);
-        bar.style.width = `${p}%`;
+        hexProg.style.strokeDashoffset = String(100 - p);
       },
       onComplete: () => {
         window.clearInterval(lineTick);
+        spinJob?.cancel?.();
         status.textContent = "GREEN — MOUNTING";
         line.textContent = "ALL MODULES";
         window.setTimeout(() => {
@@ -321,10 +394,10 @@ document.documentElement.classList.add("boot-lock");
 })();
 
 const SPEC_LINES = [
-  "SCROLL PROGRESS → GROUP ROTATION",
+  "SCROLL → CAMERA ALONG SPLINE",
   "VELOCITY → VERTEX DISPLACEMENT",
-  "POINTER → SCENE BANK / DRIFT",
-  "DOC PROGRESS → PARTICLE ORBIT",
+  "POINTER → EYE DRIFT OFF RAIL",
+  "MODULES → STATIONS ON THE PATH",
 ];
 
 function boot() {
@@ -386,6 +459,26 @@ $("#gl-dpr").textContent = motion.dpr.toFixed(1);
 })();
 const dprEl = $("#bento-dpr"); if (dprEl) dprEl.textContent = motion.dpr.toFixed(1);
 
+/* bento tiles — SVG corner ornaments (draw in on hover) + cursor-anchored
+   radial highlight coordinates for the ::before glow */
+(function bentoDecor() {
+  $$(".bento").forEach((card) => {
+    ["tl", "tr", "br", "bl"].forEach((pos) => {
+      const s = document.createElementNS(SVGNS, "svg");
+      s.setAttribute("viewBox", "0 0 14 14");
+      s.setAttribute("class", `bento-orn ${pos}`);
+      s.setAttribute("aria-hidden", "true");
+      s.innerHTML = `<path d="M1 9V1h8M4 4h3v3" fill="none" stroke="currentColor" stroke-width="1.2"/>`;
+      card.appendChild(s);
+    });
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--bx", `${((e.clientX - r.left) / r.width) * 100}%`);
+      card.style.setProperty("--by", `${((e.clientY - r.top) / r.height) * 100}%`);
+    }, { passive: true });
+  });
+})();
+
 /* cursor reticle — targeting frame that locks onto interactive elements
    and stretches with pointer velocity */
 if (!motion.touch) {
@@ -438,6 +531,95 @@ function renderFps() {
   });
 })();
 
+/* logo morph — the brand mark cycles square → circle → triangle. All three
+   are 8-segment paths with identical command structure, so anime.js can
+   tween d directly. Cycles on a timer; hover morphs immediately + glows. */
+(function logoMorph() {
+  const shape = $("#nav-mark-shape");
+  const brand = $("#nav-brand");
+  if (!shape) return;
+  /* each shape: M + 8 curve segments over the same parameter layout.
+     Square and triangle use degenerate control points (straight lines). */
+  const seg = (x1, y1, x2, y2, x, y) => `C ${x1} ${y1} ${x2} ${y2} ${x} ${y}`;
+  const line = (fx, fy, tx, ty) =>
+    seg(fx + (tx - fx) / 3, fy + (ty - fy) / 3, fx + (2 * (tx - fx)) / 3, fy + (2 * (ty - fy)) / 3, tx, ty);
+  const SQUARE = `M 12 4 ${line(12, 4, 20, 4)} ${line(20, 4, 20, 12)} ${line(20, 12, 20, 20)} ${line(20, 20, 12, 20)} ${line(12, 20, 4, 20)} ${line(4, 20, 4, 12)} ${line(4, 12, 4, 4)} ${line(4, 4, 12, 4)} Z`;
+  const K2 = 8 * Math.tan(Math.PI / 16) * (4 / 3); /* cubic kappa for 45° arcs, r=8 */
+  const pts = Array.from({ length: 8 }, (_, i) => {
+    const a = -Math.PI / 2 + (i * Math.PI) / 4;
+    return [12 + 8 * Math.cos(a), 12 + 8 * Math.sin(a)];
+  });
+  const arc = (i) => {
+    const [x0, y0] = pts[i % 8], [x1, y1] = pts[(i + 1) % 8];
+    const a0 = -Math.PI / 2 + (i * Math.PI) / 4, a1 = a0 + Math.PI / 4;
+    return seg(
+      x0 - K2 * Math.sin(a0), y0 + K2 * Math.cos(a0),
+      x1 + K2 * Math.sin(a1), y1 - K2 * Math.cos(a1),
+      x1, y1
+    );
+  };
+  const CIRCLE8 = `M 12 4 ${Array.from({ length: 8 }, (_, i) => arc(i)).join(" ")} Z`;
+  const TRIANGLE = `M 12 3.5 ${line(12, 3.5, 16.25, 11.75)} ${line(16.25, 11.75, 20.5, 20)} ${line(20.5, 20, 12, 20)} ${line(12, 20, 3.5, 20)} ${line(3.5, 20, 7.75, 11.75)} ${line(7.75, 11.75, 12, 3.5)} ${line(12, 3.5, 12, 3.5)} ${line(12, 3.5, 12, 3.5)} Z`;
+  const SHAPES = [SQUARE, CIRCLE8, TRIANGLE];
+  let idx = 0;
+  let job = null;
+  shape.setAttribute("d", SHAPES[0]);
+  function morphTo(i) {
+    if (motion.reduced) { shape.setAttribute("d", SHAPES[i]); return; }
+    job?.cancel?.();
+    job = animate(shape, { d: SHAPES[i], duration: 700, ease: "inOut(3)" });
+  }
+  const cycle = () => { idx = (idx + 1) % SHAPES.length; morphTo(idx); };
+  window.setInterval(cycle, 4200);
+  /* hover: advance immediately + engage the glow filter */
+  brand.addEventListener("pointerenter", () => { shape.setAttribute("filter", "url(#nav-glow)"); cycle(); });
+  brand.addEventListener("pointerleave", () => shape.removeAttribute("filter"));
+})();
+
+/* ---- section dividers + scroll progress wave ----
+   Every data-module section (except the hero and marquee) gets a circuit-line
+   SVG riding its top border: trace segments with node pads, plus a sine wave
+   that draws itself wider as the section travels into view. ---- */
+(function sectionDividers() {
+  const sections = $$("section[data-module], footer[data-module]").filter((s) => !["m-marquee"].includes(s.id));
+  const waves = [];
+  sections.forEach((sec, si) => {
+    if (getComputedStyle(sec).position === "static") sec.style.position = "relative";
+    const holder = document.createElement("div");
+    holder.className = "sec-divider";
+    holder.setAttribute("aria-hidden", "true");
+    /* circuit trace: staggered horizontal runs with right-angle jogs + pads */
+    const seedA = 8 + ((si * 13) % 26);
+    const seedB = 52 + ((si * 29) % 30);
+    holder.innerHTML = `
+      <svg class="sec-circuit" viewBox="0 0 100 8" preserveAspectRatio="none">
+        <path d="M0 4 H${seedA} V1.5 H${seedA + 9} V4 H${seedB} V6.5 H${seedB + 11} V4 H100" fill="none" stroke="currentColor" stroke-width="0.35" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <svg class="sec-circuit-pads" viewBox="0 0 100 8">
+        <rect x="${seedA + 8.4}" y="3.1" width="1.4" height="1.8" fill="currentColor"/>
+        <rect x="${seedB - 0.7}" y="3.1" width="1.4" height="1.8" fill="currentColor"/>
+        <rect x="${seedB + 10.3}" y="3.1" width="1.4" height="1.8" fill="currentColor"/>
+      </svg>
+      <svg class="sec-wave" viewBox="0 0 100 8" preserveAspectRatio="none">
+        <path pathLength="100" d="M0 4 ${Array.from({ length: 25 }, (_, i) => `Q ${i * 4 + 1} ${i % 2 ? 7.2 : 0.8} ${i * 4 + 2} 4 T ${i * 4 + 4} 4`).join(" ")}" fill="none" stroke="currentColor" stroke-width="0.5" vector-effect="non-scaling-stroke"/>
+      </svg>`;
+    sec.prepend(holder);
+    waves.push({ el: sec, path: holder.querySelector(".sec-wave path"), last: -1 });
+  });
+  if (motion.reduced) { waves.forEach((w) => { w.path.style.strokeDashoffset = "0"; }); return; }
+  waves.forEach((w) => { w.path.style.strokeDasharray = "100"; w.path.style.strokeDashoffset = "100"; });
+  updaters.push(() => {
+    for (const w of waves) {
+      const r = w.el.getBoundingClientRect();
+      if (r.top > motion.vh || r.bottom < 0) continue;
+      /* wave fills across as the section's top travels the lower half of the viewport */
+      const p = clamp01((motion.vh - r.top) / (motion.vh * 0.55));
+      const q = Math.round(p * 100);
+      if (q !== w.last) { w.last = q; w.path.style.strokeDashoffset = String(100 - q); }
+    }
+  });
+})();
+
 /* scroll stat readouts */
 (function statsLoop() {
   const el = {
@@ -487,14 +669,28 @@ function pushStatus(msg, tone = "info") {
   const el = document.createElement("div");
   el.className = `toast tone-${tone} ${tones[tone] || tones.info}`;
   el.style.setProperty("--toast-life", "4.2s");
-  el.innerHTML = `<span class="toast-idx">${pad(++pushStatus.count, 3)}</span><span class="toast-msg">${msg}</span>`;
+  /* tone icon — checkmark (ok), alert triangle (warn), terminal chevron (info/meta);
+     each carries a stroke that draws itself in via the .ti class */
+  const ICONS = {
+    ok: `<svg class="toast-ico" viewBox="0 0 14 14"><path class="ti" pathLength="20" d="M2.5 7.5 5.5 10.5 11.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`,
+    warn: `<svg class="toast-ico" viewBox="0 0 14 14"><path class="ti" pathLength="20" d="M7 1.5 13 12.5 1 12.5 Z" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="7" y1="6" x2="7" y2="8.6" stroke="currentColor" stroke-width="1.3"/><line x1="7" y1="10.2" x2="7" y2="11.2" stroke="currentColor" stroke-width="1.3"/></svg>`,
+    info: `<svg class="toast-ico" viewBox="0 0 14 14"><path class="ti" pathLength="20" d="M2 3.5 6 7 2 10.5" fill="none" stroke="currentColor" stroke-width="1.6"/><line class="ti" pathLength="20" x1="7.5" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.6"/></svg>`,
+  };
+  ICONS.meta = ICONS.info;
+  el.innerHTML = `${ICONS[tone] || ICONS.info}<span class="toast-idx">${pad(++pushStatus.count, 3)}</span><span class="toast-msg">${msg}</span>`;
   statusConsole.appendChild(el);
   statusConsole.classList.remove("hidden");
   while (statusConsole.children.length > 5) statusConsole.removeChild(statusConsole.firstChild);
+  /* anime.js: spring in from the right */
+  if (!motion.reduced) {
+    el.style.opacity = "0";
+    animate(el, { x: [34, 0], opacity: [0, 1], duration: 520, ease: "outElastic(1, 0.72)" });
+  }
   /* each toast dismisses itself when its progress bar drains */
   setTimeout(() => {
-    el.classList.add("leaving");
-    setTimeout(() => { el.remove(); if (!statusConsole.children.length) statusConsole.classList.add("hidden"); }, 380);
+    const done = () => { el.remove(); if (!statusConsole.children.length) statusConsole.classList.add("hidden"); };
+    if (motion.reduced) { done(); return; }
+    animate(el, { x: [0, 26], opacity: [1, 0], duration: 340, ease: "in(2)", onComplete: done });
   }, 4200);
 }
 pushStatus.count = 0;
@@ -530,12 +726,33 @@ window.__visitedModules = visitedModules;
   const labelEl = $("#hud-mod-label");
   const progEl = $("#hud-mod-prog");
   $("#hud-mod-total").textContent = pad(els.length, 2);
-  /* progress spine — a line that draws down the page with a node per module */
+  /* progress spine — a line that draws down the page with an SVG node per
+     module: hexagons for numbered modules, diamonds for the +X extras.
+     A shared feGaussianBlur filter supplies the active-node glow pulse. */
+  if (!$("#spine-defs")) {
+    const defs = document.createElementNS(SVGNS, "svg");
+    defs.setAttribute("id", "spine-defs");
+    defs.setAttribute("width", "0");
+    defs.setAttribute("height", "0");
+    defs.style.position = "absolute";
+    defs.innerHTML = `<defs><filter id="spine-glow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter></defs>`;
+    document.body.appendChild(defs);
+  }
+  const HEX = "M6 1.2 10.16 3.6 10.16 8.4 6 10.8 1.84 8.4 1.84 3.6 Z";
+  const DIA = "M6 1.4 10.6 6 6 10.6 1.4 6 Z";
   const ticks = els.map((el, i) => {
     const s = document.createElement("button");
     s.className = "spine-node";
     s.style.top = `${(i / (els.length - 1)) * 100}%`;
-    s.innerHTML = `<span class="spine-dot"></span><span class="spine-label">${MODULE_BY_ID.get(el.id)?.n ?? pad(i + 1, 2)} · ${(el.dataset.module ?? "").split("/").pop().trim()}</span>`;
+    const mod = MODULE_BY_ID.get(el.id);
+    const isExtra = !mod || !/^\d/.test(mod.n); /* +B, +R, +3D, END… get diamonds */
+    s.innerHTML = `<svg class="spine-svg" viewBox="0 0 12 12" aria-hidden="true">
+        <path class="spine-shape" d="${isExtra ? DIA : HEX}" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <circle class="spine-core" cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+      </svg><span class="spine-label">${mod?.n ?? pad(i + 1, 2)} · ${(el.dataset.module ?? "").split("/").pop().trim()}</span>`;
     s.addEventListener("click", () => { if (el.id) scrollToId(el.id); });
     nodesWrap.appendChild(s);
     return s;
@@ -543,6 +760,9 @@ window.__visitedModules = visitedModules;
   void rail;
   let activeEl = els[0];
   const setActive = (i) => {
+    /* module-boundary arpeggio — pentatonic step per module, only while the
+       ambient synth is running (synthBlip no-ops otherwise) */
+    if (booted && i !== currentModuleIdx) window.__synthBlip?.(i);
     currentModuleIdx = i;
     activeEl = els[i];
     idxEl.textContent = pad(i + 1, 2);
@@ -571,6 +791,31 @@ window.__visitedModules = visitedModules;
   });
 })();
 
+/* ---- section-entry transmission log — first time each module enters view,
+   log its arrival + a timestamp to the toast console. Debounced so a fast
+   scroll through several sections doesn't flood the console. ---- */
+(function sectionLog() {
+  const start = performance.now();
+  const logged = new Set();
+  const stamp = () => {
+    const s = (performance.now() - start) / 1000;
+    return `${pad(Math.floor(s / 60), 2)}:${pad(Math.floor(s % 60), 2)}`;
+  };
+  const io = new IntersectionObserver((entries) => {
+    if (!booted) return;
+    for (const e of entries) {
+      if (!e.isIntersecting || !e.target.id || logged.has(e.target.id)) continue;
+      logged.add(e.target.id);
+      const m = MODULE_BY_ID.get(e.target.id);
+      const label = m ? `${m.n} · ${m.name}` : (e.target.dataset.module ?? e.target.id);
+      pushStatus(`◇ ${stamp()} · ENTERED ${label}`, "meta");
+    }
+  }, { rootMargin: "-38% 0px -38% 0px" });
+  /* seed the hero as already logged so the first observation isn't noise */
+  logged.add("top");
+  $$("[data-module]").forEach((el) => { if (el.id) io.observe(el); });
+})();
+
 /* copy share link */
 (function copyLink() {
   const btn = $("#ft-copy");
@@ -593,12 +838,61 @@ window.__visitedModules = visitedModules;
   });
 })();
 
-/* scroll reveals */
+/* ---- scroll reveals — module-enter choreography, anime.js owns the motion.
+   Plain-text section headings get split into masked words that cascade up;
+   everything else fades, rises and de-blurs. The .in class is only applied
+   as the settled state (and is the instant path for reduced motion). ---- */
+function splitRevealHeading(h) {
+  if (h.children.length) return; /* markup inside — keep the block reveal */
+  const words = h.textContent.split(/\s+/).filter(Boolean);
+  h.textContent = "";
+  h.__rvWords = words.map((word, i) => {
+    const m = document.createElement("span");
+    m.className = "rvw-m";
+    const w = document.createElement("span");
+    w.className = "rvw";
+    w.textContent = word;
+    m.appendChild(w);
+    h.appendChild(m);
+    if (i < words.length - 1) h.appendChild(document.createTextNode(" "));
+    return w;
+  });
+}
+
+function revealIn(el) {
+  if (el.__revealed) return;
+  el.__revealed = true;
+  if (motion.reduced) { el.classList.add("in"); return; }
+  const delay = (parseFloat(getComputedStyle(el).getPropertyValue("--rvd")) || 0) * 1000;
+  if (el.__rvWords) {
+    /* heading: container snaps on, words cascade out of their masks */
+    el.style.opacity = "1"; el.style.transform = "none"; el.style.filter = "none";
+    animate(el.__rvWords, {
+      y: ["112%", "0%"],
+      duration: 800,
+      ease: "out(4)",
+      delay: stagger(65, { start: delay }),
+      onComplete: () => el.classList.add("in"),
+    });
+    return;
+  }
+  animate(el, {
+    opacity: [0, 1],
+    y: [40, 0],
+    filter: ["blur(7px)", "blur(0px)"],
+    duration: 900,
+    ease: "out(4)",
+    delay,
+    onComplete: () => el.classList.add("in"),
+  });
+}
+
 (function reveals() {
+  if (!motion.reduced) $$("h2.rv").forEach(splitRevealHeading);
   const io = new IntersectionObserver(
     (entries) => {
       for (const e of entries) {
-        if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+        if (e.isIntersecting) { revealIn(e.target); io.unobserve(e.target); }
       }
     },
     { rootMargin: "0px 0px -8% 0px" }
@@ -606,8 +900,41 @@ window.__visitedModules = visitedModules;
   $$(".rv").forEach((el) => io.observe(el));
 })();
 
+/* ---- count-up stats — static numbers spin from zero on first sight ---- */
+(function countUps() {
+  const els = $$("[data-countup]");
+  if (!els.length) return;
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        io.unobserve(e.target);
+        const el = e.target;
+        const target = parseInt(el.dataset.countup ?? el.textContent, 10) || 0;
+        const width = el.textContent.trim().length;
+        if (motion.reduced) { el.textContent = pad(target, width); continue; }
+        const st = { v: 0 };
+        animate(st, {
+          v: target,
+          duration: 1100,
+          ease: "out(4)",
+          onUpdate: () => { el.textContent = pad(Math.round(st.v), width); },
+          onComplete: () => { el.textContent = pad(target, width); },
+        });
+      }
+    },
+    { rootMargin: "0px 0px -10% 0px" }
+  );
+  els.forEach((el) => io.observe(el));
+})();
+
 /* ================================================================
-   4. HERO WEBGL SCENE
+   4. STRINGFLY WORLD — the whole site is one camera flight.
+   A persistent fullscreen scene behind everything: one Catmull-Rom
+   spline with a station per module. Document scroll flies the camera
+   down the path via an anchor map (each module's real page position →
+   its station's t), so the world and the page never disagree. The hero
+   icosahedron lives here now as station 00 / ORIGIN.
 ================================================================ */
 
 function makeRenderer(container, cameraZ) {
@@ -632,16 +959,219 @@ function gateVisibility(el, cb) {
   new IntersectionObserver((es) => es.forEach((e) => cb(e.isIntersecting)), { rootMargin: "160px" }).observe(el);
 }
 
-(function heroScene() {
-  const holder = $("#gl-hero");
-  const { renderer, scene, camera } = makeRenderer(holder, 6);
-  scene.fog = new THREE.Fog(0x08080a, 7, 13);
+(function flyWorld() {
+  const canvas = $("#fly-world");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(motion.dpr, motion.touch ? 1.25 : 1.5));
+  renderer.setClearColor(0x030308, 1);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x030308, 0.048);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 170);
+  const setSize = () => {
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  };
+  setSize();
+  window.addEventListener("resize", setSize);
+
+  /* accent — retinted by the theme system through __setFlyAcid */
+  const worldAcid = new THREE.Color(200 / 255, 1, 46 / 255);
+  const worldDim = worldAcid.clone().multiplyScalar(0.55);
+  const LINE2 = new THREE.Color(0x3a3a44);
+  let acidCss = "#c8ff2e";
+
+  /* ---- the string: one control point per module, sweeping banked S-curves ---- */
+  const SPACING = 15;
+  const ctrl = MODULES.map((_, i) => new THREE.Vector3(
+    Math.sin(i * 1.7) * 13 + Math.sin(i * 0.53) * 5,
+    Math.sin(i * 1.1) * 3.5,
+    -i * SPACING
+  ));
+  const lead = ctrl[0].clone().add(new THREE.Vector3(0, 0.8, 10));
+  const curve = new THREE.CatmullRomCurve3([lead, ...ctrl], false, "catmullrom", 0.5);
+
+  /* exact curve parameter of each station (nearest of 800 arc-length samples) */
+  const stationT = ctrl.map(() => 0);
+  {
+    const S = 800; const pt = new THREE.Vector3();
+    const best = ctrl.map(() => Infinity);
+    for (let s = 0; s <= S; s++) {
+      curve.getPointAt(s / S, pt);
+      ctrl.forEach((c, m) => { const d = pt.distanceToSquared(c); if (d < best[m]) { best[m] = d; stationT[m] = s / S; } });
+    }
+  }
+  /* camera parks a little short of each station so it stays framed ahead;
+     extra margin at ORIGIN so the icosahedron opens with real presence */
+  const camT = stationT.map((t, m) => Math.max(0.002, t - (m === 0 ? 0.03 : 0.016)));
+
+  /* the path ribbon — the literal string you fly */
+  const ribbonMat = new THREE.LineBasicMaterial({ color: 0xc8ff2e, transparent: true, opacity: 0.34 });
+  themedMaterials.push(ribbonMat);
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(400)), ribbonMat));
+
+  /* ---- stations: hex prisms for numbered modules, diamonds for +X extras —
+     the same shape language as the progress spine nodes ---- */
+  const hexGeo = new THREE.CylinderGeometry(1.05, 1.05, 2.4, 6, 1, true);
+  const diaGeo = new THREE.OctahedronGeometry(1.25, 0);
+  const ringPts = [];
+  for (let i = 0; i <= 64; i++) { const a = (i / 64) * Math.PI * 2; ringPts.push(new THREE.Vector3(Math.cos(a) * 2.3, 0, Math.sin(a) * 2.3)); }
+  const ringGeo = new THREE.BufferGeometry().setFromPoints(ringPts);
+  const labelFor = (mod, accent) => {
+    const c = document.createElement("canvas"); c.width = 512; c.height = 96;
+    const x = c.getContext("2d");
+    x.font = "600 40px 'JetBrains Mono Variable', 'JetBrains Mono', monospace";
+    x.textBaseline = "middle";
+    x.fillStyle = accent; x.fillText(mod.n, 12, 48);
+    x.fillStyle = "#e6e6ea"; x.fillText("· " + mod.name, 12 + x.measureText(mod.n).width + 18, 48);
+    return c;
+  };
+  const stations = MODULES.map((mod, m) => {
+    const g = new THREE.Group();
+    const tan = curve.getTangentAt(stationT[m]);
+    const side = m % 2 ? 1 : -1;
+    const off = m === 0 ? 0 : 4.6; /* ORIGIN sits on the path — you fly through it */
+    g.position.copy(ctrl[m]).add(new THREE.Vector3(-tan.z, 0, tan.x).normalize().multiplyScalar(off * side));
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0x3a3a44, wireframe: true, transparent: true, opacity: 0.85 });
+    let core = null; const minis = [];
+    if (m !== 0) { /* station 0's landmark is the icosahedron rig below */
+      const sgeo = /^\d/.test(mod.n) ? hexGeo : diaGeo;
+      core = new THREE.Mesh(sgeo, lineMat);
+      g.add(core);
+      for (let k = 0; k < 2; k++) {
+        const mini = new THREE.Mesh(sgeo, lineMat);
+        mini.scale.setScalar(0.38);
+        mini.position.set(k ? 1.9 : -1.7, k ? 1.4 : -0.9, k ? -0.8 : 1.1);
+        minis.push(mini); g.add(mini);
+      }
+    }
+    const ringMat = new THREE.LineBasicMaterial({ color: 0x3a3a44, transparent: true, opacity: 0.7 });
+    const ring = new THREE.LineLoop(ringGeo, ringMat);
+    ring.position.y = -2.1;
+    g.add(ring);
+    const tex = new THREE.CanvasTexture(labelFor(mod, acidCss));
+    const sprMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false });
+    const label = new THREE.Sprite(sprMat);
+    label.scale.set(7.2, 1.35, 1);
+    label.position.y = m === 0 ? 3.4 : 2.7;
+    g.add(label);
+    scene.add(g);
+    return { g, mod, lineMat, ringMat, sprMat, tex, core, minis, ring, state: "" };
+  });
+  function setStationState(s, st) {
+    if (s.state === st) return; s.state = st;
+    s.lineMat.color.copy(st === "active" ? worldAcid : st === "passed" ? worldDim : LINE2);
+    s.ringMat.color.copy(st === "active" ? worldAcid : LINE2);
+    s.lineMat.opacity = st === "active" ? 1 : st === "passed" ? 0.6 : 0.85;
+    s.sprMat.opacity = st === "active" ? 1 : st === "passed" ? 0.4 : 0.7;
+  }
+  stations.forEach((s, m) => setStationState(s, m === 0 ? "active" : "up"));
+  /* crisp labels once the real mono face is loaded */
+  document.fonts?.ready.then(() => stations.forEach((s) => { s.tex.image = labelFor(s.mod, acidCss); s.tex.needsUpdate = true; }));
+
+  /* ---- ambient: far starfield + acid dust in a tube around the path ---- */
+  const STARS = motion.touch ? 300 : 700;
+  {
+    const arr = new Float32Array(STARS * 3);
+    const mid = new THREE.Vector3(0, 0, (-(MODULES.length - 1) * SPACING) / 2);
+    const sv = new THREE.Vector3();
+    for (let i = 0; i < STARS; i++) {
+      sv.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar(95 + Math.random() * 55).add(mid);
+      arr[i * 3] = sv.x; arr[i * 3 + 1] = sv.y; arr[i * 3 + 2] = sv.z;
+    }
+    const sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xc7ccd8, size: 0.5, transparent: true, opacity: 0.75, sizeAttenuation: true, fog: false, blending: THREE.AdditiveBlending, depthWrite: false })));
+  }
+  const DUST = motion.touch ? 380 : 950;
+  const dustMat = new THREE.PointsMaterial({ color: 0xc8ff2e, size: 0.16, transparent: true, opacity: 0.5, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  themedMaterials.push(dustMat);
+  {
+    const arr = new Float32Array(DUST * 3);
+    const dp = new THREE.Vector3(); const dov = new THREE.Vector3();
+    for (let i = 0; i < DUST; i++) {
+      curve.getPointAt(Math.random(), dp);
+      dov.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar(3.5 + Math.random() * 13);
+      arr[i * 3] = dp.x + dov.x; arr[i * 3 + 1] = dp.y + dov.y; arr[i * 3 + 2] = dp.z + dov.z;
+    }
+    const dg = new THREE.BufferGeometry(); dg.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    scene.add(new THREE.Points(dg, dustMat));
+  }
+
+  /* ---- scroll → camera parameter: anchor map from the real module positions,
+     so the world and the module observer can never disagree ---- */
+  const els = $$("[data-module]");
+  let yAnchors = [];
+  let lastDocH = 0;
+  function buildAnchors() {
+    lastDocH = document.documentElement.scrollHeight;
+    const maxY = Math.max(1, lastDocH - window.innerHeight);
+    let prev = 0;
+    yAnchors = els.map((el, m) => {
+      let y = m === els.length - 1 ? maxY : Math.min(Math.max(el.offsetTop - motion.vh * 0.45, 0), maxY);
+      if (y < prev) y = prev;
+      prev = y;
+      return y;
+    });
+  }
+  buildAnchors();
+  document.fonts?.ready.then(buildAnchors);
+  window.addEventListener("resize", () => setTimeout(buildAnchors, 120));
+  function scrollToT(y) {
+    if (!yAnchors.length) return camT[0];
+    if (y <= yAnchors[0]) return camT[0];
+    for (let m = 0; m < yAnchors.length - 1; m++) {
+      if (y < yAnchors[m + 1]) {
+        const span = Math.max(1, yAnchors[m + 1] - yAnchors[m]);
+        return camT[m] + (camT[m + 1] - camT[m]) * ((y - yAnchors[m]) / span);
+      }
+    }
+    return camT[camT.length - 1];
+  }
+
+  /* ORIGIN rig — the migrated hero icosahedron builds into this group below */
   const group = new THREE.Group();
+  group.position.copy(ctrl[0]);
   scene.add(group);
   const geo = new THREE.IcosahedronGeometry(1.72, 3);
   const base = Float32Array.from(geo.attributes.position.array);
-  const core = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xc8ff2e, wireframe: true, transparent: true, opacity: 0.62 }));
-  themedMaterials.push(core.material);
+  /* custom fresnel + noise-shift material — rim glows acid, core fades to ink,
+     velocity brightens the whole shell and pushes the color toward white-hot */
+  const coreUniforms = {
+    uTime: { value: 0 },
+    uVel: { value: 0 },
+    uOpacity: { value: 0.62 },
+    uAcid: { value: new THREE.Color(0xc8ff2e) },
+  };
+  themedAcidUniforms.push(coreUniforms.uAcid);
+  const core = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: coreUniforms,
+    wireframe: true,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec3 vN; varying vec3 vViewDir;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vViewDir = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      precision mediump float;
+      uniform float uTime; uniform float uVel; uniform float uOpacity; uniform vec3 uAcid;
+      varying vec3 vN; varying vec3 vViewDir;
+      void main(){
+        float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vViewDir))), 2.2);
+        float vel = clamp(abs(uVel) / 5200.0, 0.0, 1.0);
+        /* rim rides the fresnel; velocity blooms it toward white-hot */
+        vec3 col = mix(uAcid * 0.35, uAcid, fres);
+        col = mix(col, vec3(1.0), fres * vel * 0.7);
+        /* slow chroma pulse so the wire never sits flat */
+        col += uAcid * 0.12 * (0.5 + 0.5 * sin(uTime * 0.9));
+        float a = uOpacity * (0.45 + 0.55 * fres) * (0.85 + vel * 0.4);
+        gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+      }`,
+  }));
   const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe6e6ea, size: 0.028, transparent: true, opacity: 0.85, sizeAttenuation: true }));
   const occl = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x08080a, transparent: true, opacity: 0.55, depthWrite: false }));
   occl.scale.setScalar(0.985);
@@ -666,47 +1196,186 @@ function gateVisibility(el, cb) {
   };
   const ring1 = mkRing(2.65, 1.12, 0.9);
   const ring2 = mkRing(3.35, 1.45, 0.5);
-  let visible = true;
-  gateVisibility(holder, (v) => (visible = v));
+
+  /* ---- flight state ---- */
+  let camPos = camT[0];          /* smoothed curve parameter */
+  let overrideT = null;          /* hyperspeed dash takes the wheel via __fly */
+  let dashHeat = 0;              /* 0..1 — dust/FOV boost during a dash */
+  let roll = 0;
+  const pv = new THREE.Vector3(), lv = new THREE.Vector3(), tanA = new THREE.Vector3(), tanB = new THREE.Vector3();
   const pos = geo.attributes.position;
+  let frameFlip = false, lastQT = -1;
+
+  function placeCamera(t, dt) {
+    const tt = Math.min(Math.max(t, 0.0005), 0.9995);
+    curve.getPointAt(tt, pv);
+    curve.getPointAt(Math.min(0.9995, tt + 0.045), lv);
+    /* bank into turns: signed change of the tangent's heading, clamped ±8° */
+    curve.getTangentAt(tt, tanA);
+    curve.getTangentAt(Math.min(0.9995, tt + 0.01), tanB);
+    const turn = tanA.x * tanB.z - tanA.z * tanB.x;
+    const targetRoll = Math.max(-0.14, Math.min(0.14, turn * 26));
+    roll += (targetRoll - roll) * Math.min(1, dt * 5);
+    /* pointer drifts the eye a touch off the rail */
+    camera.position.set(pv.x + motion.spx * 0.8, pv.y + 0.6 - motion.spy * 0.5, pv.z);
+    camera.up.set(Math.sin(roll), Math.cos(roll), 0);
+    camera.lookAt(lv);
+    const v = Math.min(Math.abs(motion.velocity) / 6000, 1);
+    const fov = 42 + v * 4 + dashHeat * 14;
+    if (Math.abs(fov - camera.fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  }
+
   updaters.push((dt, t) => {
-    if (!visible || motion.reduced) return;
-    const v = Math.min(Math.abs(motion.velocity) / 5200, 1);
-    const amp = 0.055 + v * 0.42;
-    for (let i = 0; i < pos.count; i++) {
-      const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
-      const n = Math.sin(bx * 1.35 + t * 1.15) * Math.sin(by * 1.69 + t * 0.9) * Math.sin(bz * 1.15 + t * 0.7) + 0.5 * Math.sin(bx * 3.1 - t * 1.6) * Math.sin(by * 3.1 + t * 1.2);
-      const s = 1 + amp * n; pos.setXYZ(i, bx * s, by * s, bz * s);
+    if (document.body.classList.contains("no-fx")) return;
+    /* keep anchors honest if the document grows/shrinks (fonts, images) */
+    if (Math.abs(document.documentElement.scrollHeight - lastDocH) > 4) buildAnchors();
+
+    if (motion.reduced) {
+      /* static frame per scroll position — no continuous animation */
+      const rt = overrideT ?? scrollToT(motion.scrollY);
+      const q = Math.round(rt * 2000);
+      if (q === lastQT) return;
+      lastQT = q;
+      placeCamera(rt, 1);
+      renderer.render(scene, camera);
+      return;
     }
-    pos.needsUpdate = true;
+    /* power saver: half-rate when idle and the scroll has settled */
+    frameFlip = !frameFlip;
+    if (frameFlip && document.body.classList.contains("idle") && Math.abs(motion.velocity) < 40 && overrideT === null) return;
+
+    /* ORIGIN icosahedron — the old hero animation, living at station 00 */
+    const v = Math.min(Math.abs(motion.velocity) / 5200, 1);
+    const nearOrigin = camPos < stationT[1]; /* skip vertex churn once it's behind you */
+    if (nearOrigin) {
+      const amp = 0.055 + v * 0.42;
+      for (let i = 0; i < pos.count; i++) {
+        const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
+        const n = Math.sin(bx * 1.35 + t * 1.15) * Math.sin(by * 1.69 + t * 0.9) * Math.sin(bz * 1.15 + t * 0.7) + 0.5 * Math.sin(bx * 3.1 - t * 1.6) * Math.sin(by * 3.1 + t * 1.2);
+        const s = 1 + amp * n; pos.setXYZ(i, bx * s, by * s, bz * s);
+      }
+      pos.needsUpdate = true;
+    }
     const breathe = 1 + Math.sin(t * 0.8) * 0.015 + v * 0.05;
     core.scale.setScalar(breathe); pts.scale.setScalar(breathe);
     core.rotation.z = t * 0.04; pts.rotation.z = t * 0.04;
-    core.material.opacity = 0.55 + v * 0.45;
+    coreUniforms.uTime.value = t; coreUniforms.uVel.value = motion.velocity;
+    coreUniforms.uOpacity.value = 0.55 + v * 0.45;
     shell.rotation.y = t * 0.02 + motion.docProgress * 0.9;
-    shell.rotation.x = Math.sin(t * 0.06) * 0.12 + motion.spy * 0.15;
-    shell.rotation.z += dt * Math.min(Math.abs(motion.velocity) / 24000, 0.12);
-    ring1.rotation.z = t * 0.05; ring1.rotation.x = 1.12 + motion.spy * 0.1;
-    ring2.rotation.z = -t * 0.035; ring2.rotation.x = 1.45 + motion.spy * 0.1;
-    group.rotation.y += dt * (0.05 + Math.min(Math.abs(motion.velocity) / 6000, 1) * 0.6);
-    group.rotation.x += (motion.spy * 0.42 + motion.docProgress * 0.6 - group.rotation.x) * 0.06;
-    group.position.x += (motion.spx * 0.35 - group.position.x) * 0.05;
+    shell.rotation.x = Math.sin(t * 0.06) * 0.12;
+    ring1.rotation.z = t * 0.05; ring2.rotation.z = -t * 0.035;
+    group.rotation.y += dt * (0.05 + v * 0.6);
+
+    /* stations breathe; the active one pulses */
+    for (let m = 0; m < stations.length; m++) {
+      const s = stations[m];
+      if (s.core) { s.core.rotation.y = t * 0.22 + m; s.minis[0].rotation.y = -t * 0.4; s.minis[1].rotation.x = t * 0.33; }
+      s.ring.rotation.y = t * 0.1 + m * 0.7;
+      if (s.state === "active") {
+        const pulse = 0.75 + 0.25 * Math.sin(t * 3.2);
+        s.lineMat.opacity = pulse; s.ringMat.opacity = pulse;
+      }
+    }
+
+    /* the flight itself */
+    const targetT = overrideT ?? scrollToT(motion.scrollY);
+    camPos += (targetT - camPos) * Math.min(1, dt * (overrideT !== null ? 20 : 7));
+    dashHeat = Math.max(0, dashHeat - dt * 2.2);
+    dustMat.size = 0.16 + dashHeat * 0.3;
+    dustMat.opacity = 0.5 + dashHeat * 0.4;
+    placeCamera(camPos, dt);
+
+    /* station states follow the camera, not the observer — mid-flight accuracy */
+    for (let m = 0; m < stations.length; m++) {
+      const passedPt = stationT[m] + 0.012;
+      setStationState(stations[m], camPos > passedPt ? "passed" : m === nearestStation(camPos) ? "active" : "up");
+    }
     renderer.render(scene, camera);
   });
-  if (motion.reduced) renderer.render(scene, camera);
+  function nearestStation(tp) {
+    let bi = 0, bd = Infinity;
+    for (let m = 0; m < camT.length; m++) { const d = Math.abs(camT[m] - tp); if (d < bd) { bd = d; bi = m; } }
+    return bi;
+  }
+
+  /* ---- external hooks: theme retint, snapshot, dash (Task: hyperspeed) ---- */
+  let labelTimer = 0;
+  window.__setFlyAcid = (r, g, b) => {
+    worldAcid.setRGB(r / 255, g / 255, b / 255);
+    worldDim.copy(worldAcid).multiplyScalar(0.55);
+    acidCss = `rgb(${r} ${g} ${b})`;
+    stations.forEach((s) => { const st = s.state; s.state = ""; setStationState(s, st || "up"); });
+    /* label textures are canvas-drawn — debounce the rebuild to the tween's end */
+    clearTimeout(labelTimer);
+    labelTimer = window.setTimeout(() => {
+      stations.forEach((s) => { s.tex.image = labelFor(s.mod, acidCss); s.tex.needsUpdate = true; });
+      if (motion.reduced) { lastQT = -1; }
+    }, 140);
+    if (motion.reduced) lastQT = -1; /* force a re-render next tick */
+  };
+  window.__renderFly = () => renderer.render(scene, camera);
+  window.__fly = {
+    curve, stationT, camT,
+    get pos() { return camPos; },
+    setOverride(tp) { overrideT = tp; },
+    clearOverride() { overrideT = null; },
+    heat(h) { dashHeat = Math.max(dashHeat, h); },
+    tOf(id) { const m = MODULES.findIndex((x) => x.id === id); return m >= 0 ? camT[m] : null; },
+  };
+  placeCamera(camPos, 1);
+  renderer.render(scene, camera);
 })();
 
-/* hero dial ticks */
+/* hero dial ticks — 24 marks that fill with document progress (12 o'clock start) */
 (function dialTicks() {
   const g = $("#dial-ticks");
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
+  const N = 24;
+  const ticks = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
     const l = document.createElementNS(SVGNS, "line");
     l.setAttribute("x1", String(56 + Math.cos(a) * 44)); l.setAttribute("y1", String(56 + Math.sin(a) * 44));
     l.setAttribute("x2", String(56 + Math.cos(a) * 49)); l.setAttribute("y2", String(56 + Math.sin(a) * 49));
     l.setAttribute("stroke", "#2b2b35"); l.setAttribute("stroke-width", "1.4");
     g.appendChild(l);
+    ticks.push(l);
   }
+  let lastLit = -1;
+  updaters.push(() => {
+    const lit = Math.round(motion.docProgress * N);
+    if (lit === lastLit) return;
+    lastLit = lit;
+    ticks.forEach((l, i) => {
+      const on = i < lit;
+      l.setAttribute("stroke", on ? "var(--color-acid)" : "#2b2b35");
+      l.setAttribute("stroke-width", on ? "2" : "1.4");
+    });
+  });
+})();
+
+/* hero scrim brackets + headline underline — draw themselves at boot */
+(function heroDraws() {
+  const brackets = $$(".scrim-br path");
+  const underline = $("#hero-underline path");
+  if (motion.reduced) {
+    brackets.forEach((p) => { p.style.strokeDashoffset = "0"; });
+    if (underline) underline.style.strokeDashoffset = "0";
+    return;
+  }
+  brackets.forEach((p) => { p.style.strokeDasharray = "40"; p.style.strokeDashoffset = "40"; });
+  if (underline) { underline.style.strokeDasharray = "100"; underline.style.strokeDashoffset = "100"; }
+  const waitBoot = () => {
+    if (!document.body.classList.contains("booted")) return setTimeout(waitBoot, 80);
+    animate(brackets, {
+      strokeDashoffset: [40, 0],
+      duration: 800,
+      ease: "out(3)",
+      delay: stagger(120, { start: 200 }),
+    });
+    /* underline draws after "MOTION." lands (its w-in delay is 0.51s + ~1s tween) */
+    if (underline) animate(underline, { strokeDashoffset: [100, 0], duration: 700, ease: "inOut(2)", delay: 1250 });
+  };
+  waitBoot();
 })();
 
 /* hero scroll parallax */
@@ -803,6 +1472,33 @@ $$(".vmq").forEach((wrap) => {
    6. MODULE REGISTRY
 ================================================================ */
 
+/* geometric module icons — one unique 18×18 mark per registry node,
+   drawn with the same stroke language as the HUD glyphs */
+const MODULE_ICONS = {
+  "m-marquee":  `<path d="M2 9h14M4 5l-2 4 2 4M14 5l2 4-2 4"/>`,
+  "m-registry": `<rect x="3" y="3" width="5" height="5"/><rect x="10" y="3" width="5" height="5"/><rect x="3" y="10" width="5" height="5"/><path d="M10 12.5h5M12.5 10v5"/>`,
+  "m-reveal":   `<path d="M3 15V6l6-3 6 3v9"/><path d="M6 15v-5h6v5"/>`,
+  "m-parallax": `<path d="M3 5h12M5 9h8M7 13h4"/>`,
+  "m-progress": `<circle cx="9" cy="9" r="6.5"/><path d="M9 9V3.5A6.5 6.5 0 0 1 15.5 9z" fill="currentColor" stroke="none"/>`,
+  "m-lerp":     `<path d="M2 14C6 14 6 4 10 4s4 10 6 10"/>`,
+  "m-glide":    `<path d="M3 12l4-8 4 8 4-8"/><path d="M3 15h12"/>`,
+  "m-cursor":   `<path d="M4 3l10 6-4.2 1.4L8.4 15z"/>`,
+  "m-magnetic": `<path d="M5 15V8a4 4 0 0 1 8 0v7"/><path d="M3.5 12h3M11.5 12h3"/>`,
+  "m-spotlight":`<circle cx="9" cy="7" r="3"/><path d="M4 15c1-3 3-4 5-4s4 1 5 4"/>`,
+  "m-webgl":    `<path d="M9 2l6 3.5v7L9 16l-6-3.5v-7z"/><path d="M9 2v7m0 0l6 3.5M9 9l-6 3.5"/>`,
+  "m-flythrough":`<path d="M2 14C5 6 13 6 16 3"/><path d="M2 14l3-1M2 14l1-3"/><circle cx="16" cy="3" r="1.4" fill="currentColor" stroke="none"/>`,
+  "m-grid":     `<path d="M3 3h12v12H3z"/><path d="M7 3v12M11 3v12M3 7h12M3 11h12"/>`,
+  "m-impulse":  `<path d="M2 9h4l2-5 2 10 2-5h4"/>`,
+  "m-drag":     `<rect x="6" y="6" width="6" height="6"/><path d="M9 1v3M9 14v3M1 9h3M14 9h3"/>`,
+  "m-statement":`<path d="M3 4h12M3 8h12M3 12h7"/><rect x="12" y="11" width="3" height="3" fill="currentColor" stroke="none"/>`,
+  "m-split":    `<path d="M9 2v14M4 5l3 4-3 4M14 5l-3 4 3 4"/>`,
+  "m-mask":     `<rect x="3" y="3" width="12" height="12"/><path d="M15 3L3 15" /><path d="M9 3v12" stroke-dasharray="2 2"/>`,
+  "m-sequence": `<rect x="2" y="5" width="4" height="8"/><rect x="7" y="5" width="4" height="8"/><rect x="12" y="5" width="4" height="8" fill="currentColor" stroke="none"/>`,
+  "m-diag":     `<path d="M2 15L7 8l3 3 6-8"/><circle cx="16" cy="3" r="1.4" fill="currentColor" stroke="none"/>`,
+};
+const moduleIcon = (id, cls = "reg-ico") =>
+  `<svg class="${cls}" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">${MODULE_ICONS[id] ?? `<circle cx="9" cy="9" r="6"/>`}</svg>`;
+
 (function registry() {
   const rows = $("#reg-rows");
   const hoverLabel = $("#reg-hover");
@@ -816,7 +1512,7 @@ $$(".vmq").forEach((wrap) => {
     b.style.setProperty("--rvd", `${(i % 5) * 0.05}s`);
     b.setAttribute("aria-expanded", "false");
     b.innerHTML = `
-      <span class="rr-idx tick-label col-span-2 text-fog md:col-span-1">${node.n}</span>
+      <span class="rr-idx tick-label col-span-2 flex items-center gap-2.5 text-fog md:col-span-1">${moduleIcon(node.id)}<span>${node.n}</span></span>
       <span class="rr-name col-span-8 font-display text-xl font-medium uppercase tracking-tight text-bone md:col-span-5 md:text-3xl">${node.name}</span>
       <span class="rr-meta tick-label col-span-4 hidden truncate text-fog md:block">${node.meta}</span>
       <span class="rr-live tick-label col-span-1 hidden items-center gap-1.5 text-fog md:flex"><span class="rr-dot h-1 w-1 bg-acid"></span>LIVE</span>
@@ -858,14 +1554,14 @@ $$(".vmq").forEach((wrap) => {
     detail.querySelector(".rd-port").addEventListener("click", (e) => {
       e.stopPropagation();
       wipeTransport(node.id);
-      pushStatus(`JUMP ${node.n} · ${node.name} · WIPE`, "ok");
+      pushStatus(`DASH ${node.n} · ${node.name}`, "ok");
     });
     wrap.appendChild(b);
     wrap.appendChild(detail);
     rows.appendChild(wrap);
   });
   const io = new IntersectionObserver(
-    (es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
+    (es) => es.forEach((e) => { if (e.isIntersecting) { revealIn(e.target); io.unobserve(e.target); } }),
     { rootMargin: "0px 0px -6% 0px" }
   );
   $$("#reg-rows .rv").forEach((el) => io.observe(el));
@@ -1016,6 +1712,28 @@ $$(".vmq").forEach((wrap) => {
   for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(satGeo, new THREE.MeshBasicMaterial({ color: 0xe6e6ea, wireframe: true, transparent: true, opacity: 0.9 })); rig.add(m); sats.push(m); }
   let progress = 0; let visible = false;
   gateVisibility(holder, (v) => (visible = v));
+
+  /* ---- post-processing pipeline: bloom for the wire glow + a velocity-driven
+     chromatic aberration (RGB split) that intensifies with scroll speed.
+     Disabled on reduced-motion and coarse pointers to keep the fill-rate down. ---- */
+  const usePost = !motion.reduced && !motion.touch;
+  let composer = null, bloomPass = null, rgbPass = null;
+  if (usePost) {
+    composer = new EffectComposer(renderer);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(holder.clientWidth, holder.clientHeight);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(holder.clientWidth, holder.clientHeight), 0.7, 0.5, 0.2);
+    composer.addPass(bloomPass);
+    rgbPass = new ShaderPass(RGBShiftShader);
+    rgbPass.uniforms.amount.value = 0.0;
+    composer.addPass(rgbPass);
+    composer.addPass(new OutputPass());
+    window.addEventListener("resize", () => {
+      composer.setSize(holder.clientWidth, holder.clientHeight);
+      bloomPass.setSize(holder.clientWidth, holder.clientHeight);
+    });
+  }
   const stage = $("#webgl-stage"), secEl = $("#gl-sec"), velEl = $("#gl-vel"); let lastRead = 0;
   updaters.push((dt, t) => {
     const r = stage.getBoundingClientRect();
@@ -1026,9 +1744,235 @@ $$(".vmq").forEach((wrap) => {
     rig.rotation.z += (motion.spx * 0.25 - rig.rotation.z) * 0.06; knot.rotation.x = t * 0.16;
     knot.material.opacity = 0.35 + progress * 0.45 + v * 0.2;
     for (let i = 0; i < 3; i++) { const a = t * (0.35 + i * 0.17) + progress * Math.PI * 2 + (i * Math.PI * 2) / 3; const rad = 2.1 + i * 0.36; sats[i].position.set(Math.cos(a) * rad, Math.sin(a * 1.3) * (0.5 + v * 0.9), Math.sin(a) * rad); sats[i].rotation.x = a * 1.4; sats[i].rotation.y = a; }
-    renderer.render(scene, camera);
+    if (composer) {
+      /* RGB split scales with velocity; bloom breathes a little with progress */
+      rgbPass.uniforms.amount.value = 0.0006 + v * 0.004;
+      rgbPass.uniforms.angle.value = t * 0.5;
+      bloomPass.strength = 0.55 + progress * 0.35 + v * 0.4;
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   });
   if (motion.reduced) renderer.render(scene, camera);
+})();
+
+/* ================================================================
+   9b. +F PATH MAP — the world's spline seen from outside
+   Reads the shared route from window.__fly (same curve the site-wide
+   camera rides). Traveled range burns acid via setDrawRange, the road
+   ahead stays line2, a pulsing marker shows the live camera position,
+   and the whole map orbits slowly — section progress steers the orbit.
+================================================================ */
+
+(function pathMapScene() {
+  const holder = $("#gl-fly"); if (!holder) return;
+  const { renderer, scene, camera } = makeRenderer(holder, 0);
+  camera.far = 400; camera.updateProjectionMatrix();
+  const fly = window.__fly;
+  if (!fly) return;
+  const curve = fly.curve;
+
+  /* map group centered on the route's midpoint so the orbit pivots nicely */
+  const map = new THREE.Group(); scene.add(map);
+  const MAPPTS = 360;
+  const routePts = curve.getPoints(MAPPTS);
+  const mid = new THREE.Box3().setFromPoints(routePts).getCenter(new THREE.Vector3());
+  map.position.copy(mid).negate();
+
+  /* road ahead — full path in line2 gray */
+  const aheadGeo = new THREE.BufferGeometry().setFromPoints(routePts);
+  map.add(new THREE.Line(aheadGeo, new THREE.LineBasicMaterial({ color: 0x3a3a44, transparent: true, opacity: 0.8 })));
+  /* traveled — same points, acid, drawRange grows with document progress */
+  const doneGeo = new THREE.BufferGeometry().setFromPoints(routePts);
+  doneGeo.setDrawRange(0, 0);
+  const doneMat = new THREE.LineBasicMaterial({ color: 0xc8ff2e, transparent: true, opacity: 1 });
+  themedMaterials.push(doneMat);
+  map.add(new THREE.Line(doneGeo, doneMat));
+
+  /* station dots — octahedra at each module's control point */
+  const GRAY_DOT = new THREE.Color(0x3a3a44);
+  const dotGeo = new THREE.OctahedronGeometry(0.85, 0);
+  const dotMats = [];
+  const stationDots = fly.stationT.map((t) => {
+    const m = new THREE.MeshBasicMaterial({ color: 0x3a3a44, wireframe: true, transparent: true, opacity: 0.9 });
+    dotMats.push(m);
+    const d = new THREE.Mesh(dotGeo, m);
+    curve.getPointAt(t, d.position);
+    map.add(d);
+    return d;
+  });
+
+  /* YOU ARE HERE — acid marker + halo ring that pulses */
+  const hereMat = new THREE.MeshBasicMaterial({ color: 0xc8ff2e });
+  themedMaterials.push(hereMat);
+  const here = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), hereMat);
+  map.add(here);
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xc8ff2e, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+  themedMaterials.push(haloMat);
+  const halo = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.05, 48), haloMat);
+  map.add(halo);
+
+  let visible = false; gateVisibility(holder, (v) => (visible = v));
+  const wrap = $("#fly-wrap"), tEl = $("#fly-t"), segEl = $("#fly-seg"), spdEl = $("#fly-spd");
+  const total = MODULES.length;
+  let orbit = 0, lastRead = 0;
+  const render = (dt, t) => {
+    const r = wrap.getBoundingClientRect();
+    const secP = clamp01(-r.top / (r.height - motion.vh));
+    /* orbit: slow time drift + section progress sweeps ~200°, pointer nudges */
+    orbit += dt * 0.06;
+    const az = orbit + secP * 3.5 + motion.spx * 0.25;
+    const el = 0.5 + secP * 0.55 - motion.spy * 0.12;
+    const RAD = 105;
+    camera.position.set(Math.cos(az) * Math.cos(el) * RAD, Math.sin(el) * RAD, Math.sin(az) * Math.cos(el) * RAD);
+    camera.lookAt(0, 0, 0);
+    /* live progress from the world camera itself */
+    const p = fly.pos;
+    doneGeo.setDrawRange(0, Math.max(2, Math.round(p * MAPPTS)));
+    curve.getPointAt(Math.min(0.999, p), here.position);
+    here.rotation.y = t; here.rotation.x = t * 0.7;
+    const pulse = 1 + Math.sin(t * 3.4) * 0.25;
+    halo.position.copy(here.position);
+    halo.scale.setScalar(pulse);
+    halo.lookAt(camera.position); /* lookAt is world-space — parent offset already accounted */
+    haloMat.opacity = 0.28 + 0.22 * Math.sin(t * 3.4);
+    /* station dots: passed = acid-dim tone via opacity, upcoming = gray */
+    const near = fly.stationT.findIndex((st) => p < st + 0.012);
+    stationDots.forEach((d, m) => {
+      const passed = p > fly.stationT[m] + 0.012;
+      dotMats[m].color.copy(passed ? doneMat.color : GRAY_DOT);
+      dotMats[m].opacity = passed ? 0.65 : 0.9;
+      d.rotation.y = t * 0.4 + m;
+    });
+    if (performance.now() - lastRead > 120) {
+      lastRead = performance.now();
+      tEl.textContent = pad(Math.round(p * 100), 3) + "%";
+      const cur = near === -1 ? total : near + 1; /* 1-based station you're at/approaching */
+      segEl.textContent = `${pad(Math.min(total, cur), 2)} / ${pad(total, 2)}`;
+      const rv = Math.round(motion.velocity); spdEl.textContent = `${rv > 0 ? "+" : ""}${rv}`;
+    }
+    renderer.render(scene, camera);
+  };
+  updaters.push((dt, t) => { if (!visible || motion.reduced) return; render(dt, t); });
+  if (motion.reduced) render(0.016, 0);
+})();
+
+/* ================================================================
+   9c. +G GRID — cursor-reactive dot field on a 2D canvas
+   A grid of dots reads its distance to the pointer, swells + brightens
+   within a falloff radius, and eases back to rest. Scroll velocity feeds
+   a global glow so the whole field pulses when you fling the page.
+================================================================ */
+
+(function reactiveGrid() {
+  const zone = $("#grid-zone"), canvas = $("#grid-canvas"); if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const cellsEl = $("#grid-cells"), radiusEl = $("#grid-radius"), xyEl = $("#grid-xy");
+  const GAP = motion.touch ? 34 : 26;
+  const RADIUS = motion.touch ? 120 : 170;
+  let w = 0, h = 0, dpr = 1, cols = 0, rows = 0;
+  let dots = []; /* {x, y, s (0..1 current swell)} */
+  let px = -9999, py = -9999, inside = false;
+  let accent = [200, 255, 46];
+
+  function readAccent() {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue("--acid-rgb");
+    if (raw) accent = raw.trim().split(" ").map(Number);
+  }
+  readAccent();
+  window.setInterval(readAccent, 1000);
+
+  function build() {
+    const r = zone.getBoundingClientRect();
+    dpr = Math.min(motion.dpr, 2);
+    w = r.width; h = r.height;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    cols = Math.floor(w / GAP); rows = Math.floor(h / GAP);
+    const ox = (w - (cols - 1) * GAP) / 2, oy = (h - (rows - 1) * GAP) / 2;
+    dots = [];
+    for (let iy = 0; iy < rows; iy++) for (let ix = 0; ix < cols; ix++) dots.push({ x: ox + ix * GAP, y: oy + iy * GAP, s: 0 });
+    if (cellsEl) cellsEl.textContent = String(dots.length);
+    if (radiusEl) radiusEl.textContent = String(RADIUS);
+  }
+  build();
+  window.addEventListener("resize", build);
+
+  zone.addEventListener("pointermove", (e) => {
+    const r = zone.getBoundingClientRect();
+    px = e.clientX - r.left; py = e.clientY - r.top; inside = true;
+    if (xyEl) xyEl.textContent = `${pad(Math.round(px), 3)} · ${pad(Math.round(py), 3)}`;
+  }, { passive: true });
+  zone.addEventListener("pointerleave", () => { inside = false; px = -9999; py = -9999; if (xyEl) xyEl.textContent = "— · —"; });
+
+  let onscreen = false;
+  gateVisibility(zone, (v) => (onscreen = v));
+
+  updaters.push(() => {
+    if (!onscreen) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const vel = Math.min(Math.abs(motion.velocity) / 6000, 1);
+    const r2 = RADIUS * RADIUS;
+    const [ar, ag, ab] = accent;
+    for (const d of dots) {
+      let target = 0;
+      if (inside) {
+        const dx = px - d.x, dy = py - d.y, dist2 = dx * dx + dy * dy;
+        if (dist2 < r2) { const f = 1 - Math.sqrt(dist2) / RADIUS; target = f * f; }
+      }
+      d.s += (target - d.s) * (motion.reduced ? 1 : 0.18);
+      if (d.s < 0.002 && target === 0) { d.s = 0;
+        /* rest dot: faint square, brighter with global velocity */
+        const rest = 0.12 + vel * 0.22;
+        ctx.fillStyle = `rgba(${ar},${ag},${ab},${rest * 0.4})`;
+        ctx.fillRect(d.x - 0.7, d.y - 0.7, 1.4, 1.4);
+        continue;
+      }
+      const size = 1.2 + d.s * 6.5;
+      const a = 0.18 + d.s * 0.82;
+      ctx.fillStyle = `rgba(${ar},${ag},${ab},${a})`;
+      ctx.beginPath(); ctx.arc(d.x, d.y, size, 0, Math.PI * 2); ctx.fill();
+      if (d.s > 0.4) { /* connect hot dots back toward the cursor */
+        ctx.strokeStyle = `rgba(${ar},${ag},${ab},${(d.s - 0.4) * 0.35})`;
+        ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(px, py); ctx.stroke();
+      }
+    }
+  });
+})();
+
+/* ================================================================
+   9d. CLICK RIPPLE — radial pulse spawned at the pointer, spring-decayed
+   Uses the same Spring integrator the physics modules use; a single DOM
+   node per click, animated by a private updater and removed when settled.
+================================================================ */
+
+(function clickRipple() {
+  if (motion.reduced) return;
+  window.addEventListener("pointerdown", (e) => {
+    /* skip inside the portstack/modals where it would fight other overlays */
+    if (e.target?.closest?.("#portstack, #cmdk, #hotkeys, #preloader")) return;
+    const ring = document.createElement("div");
+    ring.className = "click-ripple";
+    ring.style.left = `${e.clientX}px`;
+    ring.style.top = `${e.clientY}px`;
+    document.body.appendChild(ring);
+    const grow = new Spring(120, 14); grow.target = 1;
+    let life = 0, done = false;
+    const step = (dt) => {
+      if (done) return;
+      grow.step(dt); life += dt;
+      const s = grow.x;
+      ring.style.transform = `translate(-50%, -50%) scale(${s})`;
+      ring.style.opacity = String(Math.max(0, 1 - life / 0.6));
+      if (life > 0.62) {
+        done = true; ring.remove();
+        /* defer the splice — removing mid-iteration would skip an updater for a frame */
+        setTimeout(() => { const i = updaters.indexOf(step); if (i >= 0) updaters.splice(i, 1); }, 0);
+      }
+    };
+    updaters.push(step);
+  }, { passive: true });
 })();
 
 /* ================================================================
@@ -1112,189 +2056,9 @@ function resetChars(chars) {
 ================================================================ */
 
 $("#ft-top").addEventListener("click", () => {
-  pushStatus("RETURNING TO ORIGIN · WIPE", "ok");
+  pushStatus("RETURNING TO ORIGIN · DASH", "ok");
   wipeTransport("top");
 });
-
-/* ================================================================
-   12. PERSISTENT SHADER BACKGROUND LAYER
-================================================================ */
-
-(function shaderLayer() {
-  const host = $("#fx-layer");
-  const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "low-power" });
-  renderer.setPixelRatio(Math.min(motion.dpr, motion.touch ? 1.25 : 1.5));
-  const setSize = () => renderer.setSize(window.innerWidth, window.innerHeight);
-  setSize(); host.appendChild(renderer.domElement);
-  const scene = new THREE.Scene(); const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }, uMouse: { value: new THREE.Vector2(0, 0) }, uVel: { value: 0 }, uProg: { value: 0 }, uOver: { value: 0 }, uAcid: { value: new THREE.Color(0.784, 1.0, 0.18) } },
-    vertexShader: `void main(){gl_Position=vec4(position,1.0);}`,
-    fragmentShader: `precision mediump float;uniform float uTime;uniform vec2 uRes;uniform vec2 uMouse;uniform float uVel;uniform float uProg;uniform float uOver;uniform vec3 uAcid;
-float hash(vec2 p){return fract(sin(dot(p,vec2(41.13,289.7)))*43758.5453);}
-float vnoise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);vec2 u=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);}
-float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}
-void main(){
-  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/min(uRes.x,uRes.y);
-  vec2 m=uMouse*0.5;
-  float t=uTime*0.05;
-  float vel=clamp(abs(uVel)/6000.0,0.0,1.0);
-  /* deep space base gradient */
-  vec3 col=mix(vec3(0.010,0.010,0.018),vec3(0.028,0.028,0.044),uv.y+0.5);
-  /* aurora curtains — three fbm-displaced ribbons that drift with scroll progress */
-  for(int i=0;i<3;i++){
-    float fi=float(i);
-    float y=uv.y-0.12+fi*0.17-uProg*0.30;
-    float w=fbm(vec2(uv.x*1.6+t*(0.6+fi*0.35)+fi*7.31, y*2.2-t*0.4));
-    float band=exp(-abs(y+(w-0.5)*0.55)*(7.0-fi*1.4));
-    col+=uAcid*band*(0.050+0.030*fi)*(0.65+vel*0.9);
-  }
-  /* twinkling starfield */
-  vec2 sg=uv*46.0+vec2(t*1.3,0.0);
-  float sh=hash(floor(sg));
-  float star=smoothstep(0.986,1.0,sh)*(0.5+0.5*sin(uTime*(1.5+sh*3.0)+sh*40.0));
-  col+=vec3(0.80,0.85,0.92)*star*0.22;
-  /* pointer aura */
-  float ptr=exp(-length(uv-m)*3.2)*0.5;
-  col+=uAcid*ptr*(0.40+vel*0.5);
-  /* vertical velocity streaks — rain of signal when scrolling fast */
-  float streak=smoothstep(0.72,1.0,fbm(vec2(uv.x*26.0,uv.y*2.0-t*4.0)))*vel;
-  col+=uAcid*streak*0.4;
-  /* overdrive: spectral remix */
-  if(uOver>0.5){float h=fract(t*0.8+fbm(uv*2.0)*0.6);vec3 r=0.5+0.5*cos(6.2831*(h+vec3(0.0,0.33,0.67)));col=mix(col,col*r*1.8,0.55);}
-  /* cinematic vignette */
-  col*=1.0-0.45*dot(uv,uv);
-  gl_FragColor=vec4(col,1.0);
-}`,
-  });
-  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
-  window.addEventListener("resize", () => { setSize(); mat.uniforms.uRes.value.set(window.innerWidth, window.innerHeight); });
-  updaters.push((_dt, t) => {
-    if (host.style.display === "none" || motion.reduced) return;
-    mat.uniforms.uTime.value = t; mat.uniforms.uMouse.value.set(motion.spx, -motion.spy);
-    mat.uniforms.uVel.value = motion.velocity; mat.uniforms.uProg.value = motion.docProgress;
-    mat.uniforms.uOver.value = document.body.classList.contains("overdrive") ? 1 : 0;
-    renderer.render(scene, cam);
-  });
-  /* expose so the theme switcher can retint the shader; snapshot re-renders on demand
-     (the buffer is cleared between frames without preserveDrawingBuffer) */
-  window.__setShaderAcid = (r, g, b) => { mat.uniforms.uAcid.value.setRGB(r / 255, g / 255, b / 255); };
-  window.__renderFx = () => renderer.render(scene, cam);
-  if (motion.reduced) renderer.render(scene, cam);
-})();
-
-/* ================================================================
-   12b. PIXEL-ARC BACKGROUND (theme-tinted, canvas 2D)
-================================================================ */
-
-(function pixelArc() {
-  const canvas = $("#arc-layer");
-  const ctx = canvas.getContext("2d", { alpha: false });
-  const pixelSize = motion.touch ? 12 : 9;
-  let width = 0, height = 0;
-  /* current theme accent, updated by theme switcher */
-  const acid = { r: 200, g: 255, b: 46 };
-  window.__setArcAcid = (r, g, b) => { acid.r = r; acid.g = g; acid.b = b; };
-
-  function resize() {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = width;
-    canvas.height = height;
-  }
-  window.addEventListener("resize", resize);
-  resize();
-
-  /* drifting data motes — sparse glowing pixels that float above the arc */
-  const MOTES = motion.touch ? 26 : 54;
-  const motes = Array.from({ length: MOTES }, () => ({
-    x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 1.8,
-    vx: (Math.random() - 0.5) * 0.012, vy: -(0.004 + Math.random() * 0.014),
-    tw: Math.random() * Math.PI * 2,
-  }));
-
-  let t = 0;
-  let raf = 0;
-  let frameFlip = false;
-  function render() {
-    /* power saver: half-rate when the page is idle and scroll has settled
-       (the last painted frame simply persists on the canvas) */
-    frameFlip = !frameFlip;
-    if (frameFlip && document.body.classList.contains("idle") && Math.abs(motion.velocity) < 40) {
-      raf = requestAnimationFrame(render);
-      return;
-    }
-    /* base dark fill */
-    ctx.fillStyle = "#030308";
-    ctx.fillRect(0, 0, width, height);
-
-    if (document.body.classList.contains("no-fx")) { raf = requestAnimationFrame(render); return; }
-
-    const cols = Math.ceil(width / pixelSize);
-    const rows = Math.ceil(height / pixelSize);
-    /* variable background — the arc morphs across the journey:
-       hero: low wide bowl → midpage: flat horizon band → outro: high dome */
-    const prog = motion.docProgress;
-    const arcCenterY = height * (0.82 - prog * 0.58);
-    /* curvature eases from bowl (+) through flat (0) to dome (−) */
-    const arcDrop = height * 0.9 * Math.cos(prog * Math.PI);
-    const thickness = height * (0.36 - prog * 0.12);
-    /* wave detail tightens as the transmission progresses */
-    const waveFreq = 4 + prog * 7;
-    const waveSpeed = 1.5 + prog * 1.2;
-    /* velocity spreads the band */
-    const velBoost = Math.min(Math.abs(motion.velocity) / 6000, 1) * 0.12;
-
-    for (let x = 0; x < cols; x++) {
-      const px = x * pixelSize;
-      const nx = (px / width) * 2 - 1;
-      const curveY = arcCenterY + Math.pow(Math.abs(nx), 1.8) * arcDrop;
-      const edgeFade = 1 - Math.pow(Math.abs(nx), 2.5);
-      if (edgeFade <= 0) continue;
-      for (let y = 0; y < rows; y++) {
-        const py = y * pixelSize;
-        const distToCurve = Math.abs(py - curveY);
-        let intensity = Math.max(0, 1 - distToCurve / (thickness * (1 + velBoost)));
-        if (intensity <= 0.01) continue;
-        const wave1 = Math.sin(nx * waveFreq - t * waveSpeed) * 0.1;
-        const wave2 = Math.cos(py * 0.01 + t) * 0.1;
-        intensity = Math.max(0, Math.min(1, intensity + wave1 + wave2)) * edgeFade;
-        if (intensity <= 0.02) continue;
-        const coreStr = Math.pow(intensity, 3);
-        const midStr = Math.pow(intensity, 1.5);
-        /* blend theme accent into a bright core */
-        const r = Math.floor(acid.r * 0.16 * intensity + 235 * coreStr);
-        const g = Math.floor(acid.g * 0.16 * intensity + 235 * coreStr);
-        const b = Math.floor(acid.b * 0.9 * midStr + 35 * coreStr);
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.globalAlpha = intensity;
-        ctx.fillRect(px, py, pixelSize - 1, pixelSize - 1);
-      }
-    }
-    ctx.globalAlpha = 1;
-
-    /* data motes — quantised to the pixel grid so they read as part of the arc field */
-    const drift = 1 + Math.min(Math.abs(motion.velocity) / 4000, 1) * 3;
-    for (const m of motes) {
-      if (!motion.reduced) {
-        m.x += m.vx * 0.016; m.y += m.vy * 0.016 * drift; m.tw += 0.04;
-        if (m.y < -0.02) { m.y = 1.02; m.x = Math.random(); }
-        if (m.x < -0.02) m.x = 1.02; else if (m.x > 1.02) m.x = -0.02;
-      }
-      const gx = Math.floor((m.x * width) / pixelSize) * pixelSize;
-      const gy = Math.floor((m.y * height) / pixelSize) * pixelSize;
-      const glow = 0.22 + 0.5 * Math.abs(Math.sin(m.tw));
-      ctx.globalAlpha = glow * 0.55;
-      ctx.fillStyle = `rgb(${acid.r}, ${acid.g}, ${acid.b})`;
-      ctx.fillRect(gx, gy, Math.max(2, pixelSize * 0.35 * m.s), Math.max(2, pixelSize * 0.35 * m.s));
-    }
-    ctx.globalAlpha = 1;
-    t += motion.reduced ? 0 : 0.02;
-    raf = requestAnimationFrame(render);
-  }
-  render();
-  void raf;
-})();
 
 /* ================================================================
    13. +D DRAG MODULE
@@ -1395,8 +2159,23 @@ const COMMANDS = [
   }
   function syncCursor() { Array.from(list.children).forEach((el, i) => el.classList.toggle("on", i === cursor)); const el = list.children[cursor]; if (el) el.scrollIntoView({ block: "nearest" }); }
   function filter(q) { q = q.trim().toLowerCase(); filtered = q ? COMMANDS.filter((c) => (c.name + " " + c.meta + " " + c.n).toLowerCase().includes(q)) : COMMANDS.slice(); cursor = 0; render(); }
-  function open() { wrap.classList.add("open"); document.documentElement.classList.add("modal-lock"); input.value = ""; filter(""); setTimeout(() => input.focus(), 40); }
-  function close() { wrap.classList.remove("open"); document.documentElement.classList.remove("modal-lock"); }
+  const panel = wrap.querySelector(":scope > div");
+  function open() {
+    wrap.classList.add("open"); document.documentElement.classList.add("modal-lock");
+    input.value = ""; filter("");
+    if (!motion.reduced) {
+      /* spring entrance — anime.js elastic settle instead of the CSS keyframe */
+      panel.style.opacity = "0";
+      animate(panel, { opacity: [0, 1], scale: [0.94, 1], y: [-18, 0], duration: 480, ease: "outElastic(1, 0.75)" });
+    }
+    setTimeout(() => input.focus(), 40);
+  }
+  function close() {
+    if (!wrap.classList.contains("open")) return;
+    const done = () => { wrap.classList.remove("open"); document.documentElement.classList.remove("modal-lock"); };
+    if (motion.reduced) { done(); return; }
+    animate(panel, { opacity: [1, 0], scale: [1, 0.97], y: [0, -10], duration: 160, ease: "out(3)", onComplete: done });
+  }
   function jumpTo(cmd) {
     close();
     if (cmd.to === "__portstack") {
@@ -1405,7 +2184,7 @@ const COMMANDS = [
       return;
     }
     wipeTransport(cmd.to);
-    pushStatus(`JUMP ${cmd.n} · ${cmd.name} · WIPE`, "ok");
+    pushStatus(`DASH ${cmd.n} · ${cmd.name}`, "ok");
   }
   input.addEventListener("input", () => filter(input.value));
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
@@ -1424,10 +2203,39 @@ const COMMANDS = [
 
 (function hotkeys() {
   const hk = $("#hotkeys"), cmdk = $("#cmdk");
-  function toggleHK(force) { const should = force ?? !hk.classList.contains("open"); hk.classList.toggle("open", should); document.documentElement.classList.toggle("modal-lock", should || cmdk.classList.contains("open")); }
+  /* inject the module jump keys from the registry so the overlay never drifts */
+  const hkModules = $("#hk-modules");
+  if (hkModules) {
+    hkModules.innerHTML = MODULES.filter((m) => m.hot).map((m) =>
+      `<div class="hk-row flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">${m.n} · ${m.name}</span><span class="tick-label text-acid">${m.hot === "g" ? "G" : m.hot === "G" ? "SHIFT G" : m.hot.toUpperCase()}</span></div>`
+    ).join("");
+  }
+  const hkRows = $$("#hk-modules .hk-row");
+  function toggleHK(force) {
+    const should = force ?? !hk.classList.contains("open");
+    hk.classList.toggle("open", should);
+    document.documentElement.classList.toggle("modal-lock", should || cmdk.classList.contains("open"));
+    /* stagger the injected rows in on open */
+    if (should && !motion.reduced && hkRows.length) {
+      hkRows.forEach((r) => { r.style.opacity = "0"; });
+      animate(hkRows, { opacity: [0, 1], x: [-10, 0], duration: 360, ease: "out(3)", delay: stagger(22) });
+    }
+  }
   hk.addEventListener("click", (e) => { if (e.target === hk) toggleHK(false); });
   const KEY_TO_MODULE = new Map(MODULES.filter((m) => m.hot).map((m) => [m.hot, m.id]));
-  function jumpId(id) { scrollToId(id); const m = MODULE_BY_ID.get(id); if (m) pushStatus(`JUMP ${m.n} · ${m.name}`, "ok"); }
+  function jumpId(id) {
+    /* far jumps (>1 module away) fly the spline; neighbours smooth-scroll */
+    const from = MODULES.findIndex((m) => m.id === ($$("[data-module]")[currentModuleIdx]?.id ?? "top"));
+    const to = MODULES.findIndex((m) => m.id === id);
+    const m = MODULE_BY_ID.get(id);
+    if (from >= 0 && to >= 0 && Math.abs(to - from) > 1) {
+      wipeTransport(id);
+      if (m) pushStatus(`DASH ${m.n} · ${m.name}`, "ok");
+      return;
+    }
+    scrollToId(id);
+    if (m) pushStatus(`JUMP ${m.n} · ${m.name}`, "ok");
+  }
   function nextMod(dir) {
     const cur = MODULES.findIndex((m) => m.id === ($$("[data-module]")[currentModuleIdx]?.id ?? "top"));
     const next = Math.max(0, Math.min(MODULES.length - 1, cur + dir));
@@ -1446,7 +2254,7 @@ const COMMANDS = [
     if (e.key === "G") { e.preventDefault(); jumpId("m-outro"); return; }
     if (e.key === "j" || e.key === "ArrowRight") { e.preventDefault(); nextMod(1); return; }
     if (e.key === "k" || e.key === "ArrowLeft") { e.preventDefault(); nextMod(-1); return; }
-    if (e.key === "s" || e.key === "S") { e.preventDefault(); document.body.classList.toggle("no-fx"); pushStatus(document.body.classList.contains("no-fx") ? "SHADER LAYER OFF" : "SHADER LAYER ON", "meta"); return; }
+    if (e.key === "s" || e.key === "S") { e.preventDefault(); document.body.classList.toggle("no-fx"); pushStatus(document.body.classList.contains("no-fx") ? "WORLD LAYER OFF" : "WORLD LAYER ON", "meta"); return; }
     if (e.key === "r" || e.key === "R") { e.preventDefault(); const btn = $("#split-replay"); if (btn) { btn.click(); pushStatus("SPLIT REPLAYED", "ok"); } return; }
     if (e.key === "t" || e.key === "T") { e.preventDefault(); window.__cycleTheme?.(); return; }
     if (e.key === "f" || e.key === "F") { e.preventDefault(); window.__toggleFocus?.(); return; }
@@ -1487,24 +2295,65 @@ let currentTheme = THEME_REGISTRY[localStorage.getItem("theme")] ? localStorage.
 document.body.dataset.theme = currentTheme;
 (function themes() {
   const swatches = $$(".theme-swatch"), wrap = $("#theme-swatches"); wrap.classList.remove("hidden"); wrap.classList.add("md:flex");
-  function apply(name) {
+  /* animated accent crossfade — anime.js tweens the rgb triplet and pushes
+     every frame into the CSS vars, all shader uniforms and every themed
+     three.js material, so the page, the sky, the arc and the 3D scenes
+     glide to the new color together instead of snapping */
+  const rgbNow = [...THEME_REGISTRY[currentTheme].rgb];
+  let themeJob = null;
+  const syncAccent = (r, g, b) => {
+    document.documentElement.style.setProperty("--acid-rgb", `${r} ${g} ${b}`);
+    window.__setFlyAcid?.(r, g, b);
+    themedMaterials.forEach((m) => { if (m && m.color) m.color.setRGB(r / 255, g / 255, b / 255); });
+    themedAcidUniforms.forEach((u) => { if (u && u.value) u.value.setRGB(r / 255, g / 255, b / 255); });
+  };
+  /* the stylesheet's body[data-theme] rules are !important, so the tween
+     overrides them with inline !important vars, then hands control back */
+  const overrideCssAccent = (r, g, b) => {
+    document.body.style.setProperty("--color-acid", `rgb(${r} ${g} ${b})`, "important");
+    document.body.style.setProperty("--color-acid-dim", `rgb(${Math.round(r * 0.72)} ${Math.round(g * 0.72)} ${Math.round(b * 0.72)})`, "important");
+  };
+  const releaseCssAccent = () => {
+    document.body.style.removeProperty("--color-acid");
+    document.body.style.removeProperty("--color-acid-dim");
+  };
+  function apply(name, instant = false) {
     if (!THEME_REGISTRY[name]) name = "acid";
     currentTheme = name;
-    document.body.dataset.theme = name;
     localStorage.setItem("theme", name);
     swatches.forEach((s) => s.classList.toggle("on", s.dataset.theme === name));
-    /* propagate accent to every subsystem */
     const [r, g, b] = THEME_REGISTRY[name].rgb;
-    window.__setShaderAcid?.(r, g, b);
-    window.__setArcAcid?.(r, g, b);
-    /* retint every registered three.js material */
-    themedMaterials.forEach((m) => { if (m && m.color) m.color.setRGB(r / 255, g / 255, b / 255); });
-    /* also set a runtime CSS var in case any inline rgb() needs it */
-    document.documentElement.style.setProperty("--acid-rgb", `${r} ${g} ${b}`);
+    themeJob?.cancel?.();
+    if (instant || motion.reduced) {
+      document.body.dataset.theme = name;
+      releaseCssAccent();
+      rgbNow[0] = r; rgbNow[1] = g; rgbNow[2] = b;
+      syncAccent(r, g, b);
+      if (!instant) pushStatus(`THEME · ${THEME_LABELS[name]}`, "meta");
+      return;
+    }
+    const st = { r: rgbNow[0], g: rgbNow[1], b: rgbNow[2] };
+    themeJob = animate(st, {
+      r, g, b,
+      duration: 650,
+      ease: "inOut(2)",
+      onUpdate: () => {
+        rgbNow[0] = Math.round(st.r); rgbNow[1] = Math.round(st.g); rgbNow[2] = Math.round(st.b);
+        overrideCssAccent(rgbNow[0], rgbNow[1], rgbNow[2]);
+        syncAccent(rgbNow[0], rgbNow[1], rgbNow[2]);
+      },
+      onComplete: () => {
+        /* settle: let the stylesheet own the exact theme colors again */
+        document.body.dataset.theme = name;
+        releaseCssAccent();
+        rgbNow[0] = r; rgbNow[1] = g; rgbNow[2] = b;
+        syncAccent(r, g, b);
+      },
+    });
     pushStatus(`THEME · ${THEME_LABELS[name]}`, "meta");
   }
   swatches.forEach((s) => s.addEventListener("click", () => apply(s.dataset.theme)));
-  apply(currentTheme);
+  apply(currentTheme, true);
   window.__cycleTheme = () => { const i = THEMES.indexOf(currentTheme); apply(THEMES[(i + 1) % THEMES.length]); };
   window.__applyTheme = apply;
 })();
@@ -1565,8 +2414,28 @@ async function toggleSynth() {
   const osc1 = synthCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 55; osc1.connect(filter); osc1.start(t);
   const osc2 = synthCtx.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = 55 * 1.5; const osc2Gain = synthCtx.createGain(); osc2Gain.gain.value = 0.2; osc2.connect(osc2Gain).connect(filter); osc2.start(t);
   const lfo = synthCtx.createOscillator(); lfo.frequency.value = 0.15; const lfoGain = synthCtx.createGain(); lfoGain.gain.value = 400; lfo.connect(lfoGain).connect(filter.frequency); lfo.start(t);
-  synthNodes = { master, filter, osc1, osc2, lfo }; synthOn = true; pushStatus("SYNTH · AMBIENT LOOP ENGAGED", "ok");
+  /* blip bus — short plucked notes for module-boundary arpeggios, kept off the
+     filtered drone so transients stay crisp */
+  const blipBus = synthCtx.createGain(); blipBus.gain.value = 0.6; blipBus.connect(master);
+  synthNodes = { master, filter, osc1, osc2, lfo, blipBus }; synthOn = true; pushStatus("SYNTH · AMBIENT LOOP ENGAGED", "ok");
 }
+
+/* pentatonic blip — call on module change; no-op unless the synth is running */
+const BLIP_SCALE = [0, 3, 5, 7, 10]; /* minor pentatonic semitone offsets */
+function synthBlip(step = 0) {
+  if (!synthOn || !synthNodes || !synthCtx) return;
+  const t = synthCtx.currentTime;
+  const semis = BLIP_SCALE[((step % BLIP_SCALE.length) + BLIP_SCALE.length) % BLIP_SCALE.length];
+  const octave = Math.floor(step / BLIP_SCALE.length);
+  const freq = 220 * Math.pow(2, (semis + octave * 12) / 12);
+  const o = synthCtx.createOscillator(); o.type = "triangle"; o.frequency.value = freq;
+  const g = synthCtx.createGain(); g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.22, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.45);
+  o.connect(g).connect(synthNodes.blipBus);
+  o.start(t); o.stop(t + 0.5);
+}
+window.__synthBlip = synthBlip;
 /* one persistent updater — guarded, so off→on cycles never stack duplicates */
 updaters.push(() => { if (!synthOn || !synthNodes) return; const v = Math.min(Math.abs(motion.velocity) / 6000, 1); synthNodes.filter.frequency.setTargetAtTime(400 + v * 2400 + motion.docProgress * 900, synthCtx.currentTime, 0.25); const pitch = 55 * (1 + motion.docProgress * 0.6); synthNodes.osc1.frequency.setTargetAtTime(pitch, synthCtx.currentTime, 0.4); synthNodes.osc2.frequency.setTargetAtTime(pitch * 1.5, synthCtx.currentTime, 0.4); });
 window.__toggleSynth = toggleSynth;
@@ -1575,8 +2444,7 @@ window.__isSoundOn = () => synthOn;
 async function takeSnapshot() {
   const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1200); const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d");
   ctx.fillStyle = "#030308"; ctx.fillRect(0, 0, w, h);
-  const arc = document.querySelector("#arc-layer"); if (arc) { try { ctx.drawImage(arc, 0, 0, w, h); } catch (_) {} }
-  const fx = document.querySelector("#fx-layer canvas"); if (fx) { try { window.__renderFx?.(); ctx.globalAlpha = 0.3; ctx.drawImage(fx, 0, 0, w, h); ctx.globalAlpha = 1; } catch (_) {} }
+  const fly = document.querySelector("#fly-world"); if (fly) { try { window.__renderFly?.(); ctx.drawImage(fly, 0, 0, w, h); } catch (_) {} }
   const [tr, tg, tb] = THEME_REGISTRY[currentTheme]?.rgb ?? [200, 255, 46];
   const accentCss = `rgb(${tr}, ${tg}, ${tb})`;
   ctx.fillStyle = "rgba(8,8,10,0.55)"; ctx.fillRect(0, h - 140, w, 140); ctx.fillStyle = accentCss; ctx.font = "700 22px monospace"; ctx.fillText("STRINGTUNE × THREE.JS", 24, h - 96);
@@ -1712,8 +2580,9 @@ $("#ft-export")?.addEventListener("click", exportJSON);
         c.replaceWith(ph);
       });
       /* wake states that observers/animations drive on the real page */
-      clone.querySelectorAll(".rv").forEach((el) => el.classList.add("in"));
+      clone.querySelectorAll(".rv").forEach((el) => { el.classList.add("in"); el.style.transform = ""; el.style.filter = ""; });
       clone.querySelectorAll(".ch").forEach((el) => { el.style.transform = "none"; el.style.opacity = "1"; });
+      clone.querySelectorAll(".rvw").forEach((el) => { el.style.transform = "none"; });
       clone.querySelectorAll("[style]").forEach((el) => { if (el.style.opacity) el.style.opacity = ""; });
       const page = document.createElement("div");
       page.className = "pv-live-page";
@@ -2355,6 +3224,45 @@ $("#ft-export")?.addEventListener("click", exportJSON);
     const v = Math.min(Math.abs(motion.velocity) / 6000, 1);
     const w = 300 + v * 400;
     $$(".velo-wght").forEach((el) => el.style.setProperty("--velo-wght", String(Math.round(w))));
+  });
+})();
+
+/* ---- dynamic counter seeds — keep the "MODULES / HOTKEYS" tallies honest
+   as the registry grows (these feed the count-up animation on first sight) ---- */
+(function seedCounters() {
+  const modCount = MODULES.filter((m) => !["footer"].includes(m.id)).length;
+  const hotCount = MODULES.filter((m) => m.hot).length;
+  $$("[data-count-modules]").forEach((el) => { el.dataset.countup = String(modCount); if (motion.reduced) el.textContent = pad(modCount, 2); });
+  $$("[data-count-hotkeys]").forEach((el) => { el.dataset.countup = String(hotCount); if (motion.reduced) el.textContent = pad(hotCount, 2); });
+  /* the legacy static tiles too, so nothing reads a stale hard-coded number */
+  const nodesOnline = MODULES.length - 1;
+  $$("[data-countup='18'], [data-countup='20']").forEach((el) => { el.dataset.countup = String(nodesOnline); el.textContent = String(nodesOnline); });
+})();
+
+/* ---- variable font axes — the shipped faces expose a wght axis (only), so we
+   drive that for real and synthesize slant with a skew transform + optical
+   letter-spacing, all mapped to signed scroll velocity. The demo string leans
+   into the direction you throw the page. ---- */
+(function variableAxes() {
+  const demo = $("#axis-demo");
+  if (!demo) return;
+  const wEl = $("#axis-wght"), sEl = $("#axis-slnt");
+  let lastW = -1, lastS = 999;
+  if (motion.reduced) { demo.style.fontVariationSettings = `"wght" 400`; return; }
+  updaters.push(() => {
+    const r = demo.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > motion.vh) return;
+    const sv = motion.velocity;                         /* signed */
+    const mag = Math.min(Math.abs(sv) / 6000, 1);
+    const wght = Math.round(200 + mag * 600);           /* 200..800 real axis */
+    const slnt = Math.max(-14, Math.min(14, sv / -420)); /* synthetic lean */
+    const track = (-0.04 + mag * 0.06).toFixed(3);       /* optical: tightens then opens */
+    const qw = Math.round(wght / 10) * 10;
+    if (qw !== lastW) { lastW = qw; demo.style.fontVariationSettings = `"wght" ${qw}`; if (wEl) wEl.textContent = String(qw); }
+    demo.style.transform = `skewX(${slnt.toFixed(1)}deg)`;
+    demo.style.letterSpacing = `${track}em`;
+    const qs = Math.round(slnt);
+    if (qs !== lastS) { lastS = qs; if (sEl) sEl.textContent = `${qs}°`; }
   });
 })();
 

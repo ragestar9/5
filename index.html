@@ -12,8 +12,8 @@
     <title>StringTune × Three.js — A 3D Motion Runtime</title>
   </head>
   <body class="bg-ink font-display text-bone">
-    <!-- ==================== PIXEL-ARC BACKGROUND (deepest) ==================== -->
-    <canvas id="arc-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 -z-10 h-full w-full"></canvas>
+    <!-- ==================== STRINGFLY WORLD (the site-wide camera flight) ==================== -->
+    <canvas id="fly-world" aria-hidden="true" class="pointer-events-none fixed inset-0 -z-10 h-full w-full"></canvas>
 
     <!-- ==================== FOREGROUND INK TRAIL (pointer overlay) ==================== -->
     <canvas id="ink-trail" aria-hidden="true" class="pointer-events-none fixed inset-0 z-[74] h-full w-full mix-blend-screen" style="opacity: 0.5"></canvas>
@@ -24,9 +24,6 @@
       <div id="wipe-bot" class="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-ink2 border-t border-acid" style="transform: translateY(105%)"></div>
       <div id="wipe-scan" class="absolute inset-x-0 h-[2px] bg-acid" style="top: 50%; opacity: 0; box-shadow: 0 0 30px 2px rgba(var(--acid-rgb), 0.8)"></div>
     </div>
-
-    <!-- ==================== PERSISTENT SHADER LAYER ==================== -->
-    <div id="fx-layer" aria-hidden="true" class="pointer-events-none fixed inset-0 z-0 opacity-[0.28] mix-blend-screen"></div>
 
     <!-- ==================== COMMAND PALETTE ==================== -->
     <div id="cmdk" class="fixed inset-0 z-[95] hidden items-start justify-center bg-ink/70 p-4 backdrop-blur-md md:p-16">
@@ -63,7 +60,7 @@
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">PREV MODULE</span><span class="tick-label text-bone">K / ←</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">MODULE 1–9</span><span class="tick-label text-bone">1 … 9</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">IMPULSE (09)</span><span class="tick-label text-bone">0</span></div>
-          <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">SHADER LAYER</span><span class="tick-label text-bone">S</span></div>
+          <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">WORLD LAYER</span><span class="tick-label text-bone">S</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">REPLAY SPLIT</span><span class="tick-label text-bone">R</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">GLYPH INTENSITY</span><span class="tick-label text-bone">SHIFT X</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">CYCLE THEME (6)</span><span class="tick-label text-bone">T</span></div>
@@ -75,6 +72,11 @@
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">GLYPH STORM</span><span class="tick-label text-bone">X</span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">PORTSTACK TRANSPORT</span><span class="tick-label text-acid">\ </span></div>
           <div class="flex items-center justify-between border-b border-line py-2"><span class="tick-label text-fog">SECRET · OVERDRIVE</span><span class="tick-label text-acid">↑↑↓↓←→←→BA</span></div>
+        </div>
+        <!-- module jump grid — injected from the MODULE registry so it stays in sync -->
+        <div class="mt-6 border-t border-line pt-4">
+          <span class="tick-label text-fog">MODULE JUMP KEYS</span>
+          <div id="hk-modules" class="mt-3 grid grid-cols-2 gap-x-10 gap-y-2 md:grid-cols-3"></div>
         </div>
         <p class="mt-6 text-sm leading-relaxed text-fog">
           Everything on this page is keyboard-navigable. Press <span class="text-acid">?</span> anytime to bring this back up.
@@ -115,13 +117,27 @@
         <!-- divider -->
         <div id="boot-divider" class="mx-auto mt-4 h-px w-48 bg-line2" style="opacity: 0; transform: scaleX(0)"></div>
 
-        <!-- counter -->
-        <div class="relative mt-4 text-center">
-          <div class="font-mono text-[clamp(3.5rem,12vw,9rem)] font-light leading-none tabular-nums text-bone">
-            <span id="boot-count">000</span><span class="text-acid">%</span>
+        <!-- counter + hexagon spinner -->
+        <div class="relative mt-4 flex items-center justify-center gap-6 text-center">
+          <div class="relative h-20 w-20 md:h-24 md:w-24">
+            <svg id="boot-hex" viewBox="0 0 48 48" class="h-full w-full overflow-visible">
+              <!-- base outline -->
+              <path d="M 24 4 L 41.32 14 L 41.32 34 L 24 44 L 6.68 34 L 6.68 14 Z" fill="none" stroke="#2b2b35" stroke-width="1.5"/>
+              <!-- progress ring: dashoffset driven by the boot counter -->
+              <path id="boot-hex-prog" d="M 24 4 L 41.32 14 L 41.32 34 L 24 44 L 6.68 34 L 6.68 14 Z" fill="none" stroke="var(--color-acid)" stroke-width="1.5" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" stroke-linecap="square"/>
+              <!-- inner spinner: dashed hexagon on a slow rotate -->
+              <g id="boot-hex-spin" style="transform-origin: 24px 24px">
+                <path d="M 24 12 L 34.39 18 L 34.39 30 L 24 36 L 13.61 30 L 13.61 18 Z" fill="none" stroke="var(--color-acid)" stroke-width="1" stroke-dasharray="4 5" opacity="0.6"/>
+              </g>
+            </svg>
           </div>
-          <div class="tick-label mt-4 text-fog">
-            LOADING <span id="boot-line" class="text-acid">STRINGREVEAL</span><span class="animate-blink">_</span>
+          <div>
+            <div class="font-mono text-[clamp(3.5rem,12vw,9rem)] font-light leading-none tabular-nums text-bone">
+              <span id="boot-count">000</span><span class="text-acid">%</span>
+            </div>
+            <div class="tick-label mt-4 text-fog">
+              LOADING <span id="boot-line" class="text-acid">STRINGREVEAL</span><span class="animate-blink">_</span>
+            </div>
           </div>
         </div>
       </div>
@@ -132,7 +148,6 @@
           <span class="tick-label tabular-nums text-fog">MODULE <span id="boot-mod">01</span>/16</span>
           <span id="boot-status" class="tick-label text-fog">INITIALIZING</span>
         </div>
-        <div class="h-1 w-full bg-line"><div id="boot-bar" class="h-full bg-acid" style="width: 0%"></div></div>
       </div>
     </div>
 
@@ -154,8 +169,19 @@
 
     <header id="hud-top" class="hud-in fixed inset-x-0 top-0 z-[60] border-b border-line bg-ink/72 backdrop-blur-md" style="--hud-t: translateY(-102%)">
       <div id="nav-inner" class="flex h-12 items-center justify-between px-4 md:px-8">
-        <a href="#top" class="group flex items-center gap-3">
-          <span id="nav-mark" class="grid h-6 w-6 place-items-center bg-acid"><span class="block h-2 w-2 rotate-45 border-[1.5px] border-ink"></span></span>
+        <a href="#top" id="nav-brand" class="group flex items-center gap-3">
+          <span id="nav-mark" class="grid h-6 w-6 place-items-center">
+            <svg viewBox="0 0 24 24" class="h-6 w-6 overflow-visible">
+              <defs>
+                <filter id="nav-glow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="b"/>
+                  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <path id="nav-mark-shape" class="text-acid" fill="currentColor" d="M4 4 L20 4 L20 20 L4 20 Z"/>
+              <path d="M12 9 L15 12 L12 15 L9 12 Z" fill="none" stroke="var(--color-ink)" stroke-width="1.5"/>
+            </svg>
+          </span>
           <span class="tick-label text-bone transition-colors group-hover:text-acid">STRINGTUNE × THREE.JS</span>
         </a>
         <span class="tick-label hidden text-fog md:block">
@@ -202,12 +228,12 @@
 
     <aside id="tele-bot" class="hud-in fixed bottom-0 left-0 z-[60] hidden border-r border-t border-line bg-ink/72 backdrop-blur-md md:block" style="--hud-t: translateY(102%)">
       <div class="grid grid-cols-6 divide-x divide-line">
-        <div class="px-3 py-2"><div class="tick-label text-fog">PXL</div><div id="t-pxl" class="tick-label mt-0.5 tabular-nums text-bone">00000</div></div>
-        <div class="px-3 py-2"><div class="tick-label text-fog">PCT</div><div id="t-pct" class="tick-label mt-0.5 tabular-nums text-bone">00%</div></div>
-        <div class="px-3 py-2"><div class="tick-label text-fog">X</div><div id="t-x" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
-        <div class="px-3 py-2"><div class="tick-label text-fog">Y</div><div id="t-y" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
-        <div class="px-3 py-2"><div class="tick-label text-fog">VEL</div><div id="t-vel" class="tick-label mt-0.5 tabular-nums text-bone">+0</div></div>
-        <div class="px-3 py-2"><div class="tick-label text-fog">DIR</div><div id="t-dir" class="tick-label mt-0.5 tabular-nums text-bone">·</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1.5" y="1.5" width="7" height="7"/><path d="M1.5 5h7M5 1.5v7"/></svg>PXL</div><div id="t-pxl" class="tick-label mt-0.5 tabular-nums text-bone">00000</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><circle cx="5" cy="5" r="3.6"/><path d="M5 5V1.4A3.6 3.6 0 0 1 8.6 5z" fill="currentColor" stroke="none"/></svg>PCT</div><div id="t-pct" class="tick-label mt-0.5 tabular-nums text-bone">00%</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1 5h8M7 3l2 2-2 2"/></svg>X</div><div id="t-x" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M5 1v8M3 7l2 2 2-2"/></svg>Y</div><div id="t-y" class="tick-label mt-0.5 tabular-nums text-bone">0000</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1 6.5L3.5 3l2 3L8 2"/><path d="M8 2v2.4M8 2H5.6"/></svg>VEL</div><div id="t-vel" class="tick-label mt-0.5 tabular-nums text-bone">+0</div></div>
+        <div class="px-3 py-2"><div class="tick-label flex items-center gap-1.5 text-fog"><svg class="stat-glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M5 1.5v7M2.5 4L5 1.5 7.5 4M2.5 6L5 8.5 7.5 6"/></svg>DIR</div><div id="t-dir" class="tick-label mt-0.5 tabular-nums text-bone">·</div></div>
       </div>
       <div class="h-px w-full bg-line"><div id="hud-vel-gauge" class="h-full bg-line2 transition-[width] duration-150" style="width: 0%"></div></div>
     </aside>
@@ -218,18 +244,18 @@
     </aside>
 
     <!-- ==================== HERO ==================== -->
+    <!-- the icosahedron lives in the fly-world now (station 00) — the hero is a
+         transparent viewport onto the world's parking position -->
     <header id="top" data-module="HERO / ICOSA" class="relative flex h-[100svh] min-h-[620px] flex-col overflow-hidden">
-      <div id="hero-gl" class="absolute inset-0">
-        <div id="gl-hero" class="relative h-full w-full">
-          <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.07),transparent_62%)]"></div>
-        </div>
+      <div id="hero-gl" class="pointer-events-none absolute inset-0">
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.07),transparent_62%)]"></div>
       </div>
 
       <div class="pointer-events-none absolute inset-4 z-10 hidden md:block">
-        <span class="absolute left-0 top-0 h-5 w-5 border-l border-t border-line2"></span>
-        <span class="absolute right-0 top-0 h-5 w-5 border-r border-t border-line2"></span>
-        <span class="absolute bottom-0 left-0 h-5 w-5 border-b border-l border-line2"></span>
-        <span class="absolute bottom-0 right-0 h-5 w-5 border-b border-r border-line2"></span>
+        <svg class="scrim-br absolute left-0 top-0 h-6 w-6" viewBox="0 0 24 24"><path pathLength="40" d="M1 23V1h22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg class="scrim-br absolute right-0 top-0 h-6 w-6" viewBox="0 0 24 24" style="transform: rotate(90deg)"><path pathLength="40" d="M1 23V1h22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg class="scrim-br absolute bottom-0 right-0 h-6 w-6" viewBox="0 0 24 24" style="transform: rotate(180deg)"><path pathLength="40" d="M1 23V1h22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg class="scrim-br absolute bottom-0 left-0 h-6 w-6" viewBox="0 0 24 24" style="transform: rotate(270deg)"><path pathLength="40" d="M1 23V1h22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
       </div>
 
       <div class="pointer-events-none absolute right-14 top-24 z-20 hidden lg:block">
@@ -253,7 +279,7 @@
 
         <h1 id="hero-head" class="velo-wght font-display text-[clamp(2.9rem,8.6vw,8.2rem)] font-medium leading-[0.96] tracking-[-0.03em] text-bone">
           <span class="w-mask"><span class="w-in" style="transition-delay: 0.1s">TUNE&nbsp;</span></span><span class="w-mask"><span class="w-in" style="transition-delay: 0.19s">THE&nbsp;</span></span><span class="w-mask"><span class="w-in" style="transition-delay: 0.28s">WEB</span></span><br />
-          <span class="w-mask"><span class="w-in" style="transition-delay: 0.42s">INTO&nbsp;</span></span><span class="w-mask"><span class="w-in text-acid" style="transition-delay: 0.51s">MOTION.</span></span>
+          <span class="w-mask"><span class="w-in" style="transition-delay: 0.42s">INTO&nbsp;</span></span><span class="relative inline-block"><span class="w-mask"><span class="w-in text-acid" style="transition-delay: 0.51s">MOTION.</span></span><svg id="hero-underline" class="pointer-events-none absolute -bottom-[0.06em] left-0 w-full overflow-visible" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M2 10 C 30 4, 60 13, 100 8 S 170 4, 198 9" fill="none" stroke="var(--color-acid)" stroke-width="2.5" stroke-linecap="round"/></svg></span>
         </h1>
 
         <div class="mt-8 flex flex-col justify-between gap-6 md:flex-row md:items-end">
@@ -295,7 +321,7 @@
       </div>
       <div id="reg-rows" class="mt-6 md:mt-10"></div>
       <div class="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-6 md:px-10">
-        <span class="tick-label text-fog">18 NODES ONLINE · 0 DEGRADED</span>
+        <span class="tick-label text-fog"><span class="tabular-nums" data-countup="18">18</span> NODES ONLINE · 0 DEGRADED</span>
         <span id="reg-hover" class="tick-label text-fog">IDLE</span>
       </div>
     </section>
@@ -722,6 +748,82 @@
       </div>
     </section>
 
+    <!-- ==================== +F PATH MAP ==================== -->
+    <section id="m-flythrough" data-module="+F / STRINGPATHMAP" class="relative border-t border-line">
+      <div class="mx-auto max-w-[1440px] px-5 pt-14 md:px-10 md:pt-20">
+        <div class="flex items-center justify-between gap-4 border-b border-line pb-4">
+          <div class="flex items-center gap-3"><span class="h-1.5 w-1.5 animate-blink bg-acid"></span>
+            <span class="tick-label text-fog">MODULE <span class="text-bone">+F</span> — <span class="text-acid">STRINGPATHMAP</span></span></div>
+          <div class="hidden gap-2 md:flex">
+            <span class="tick-label border border-line px-2 py-1 text-fog">ROUTE</span>
+            <span class="tick-label border border-line px-2 py-1 text-fog">ORBIT CAM</span>
+            <span class="tick-label border border-line px-2 py-1 text-fog">LIVE</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-6 pb-10 pt-8 md:grid-cols-12 md:pb-16 md:pt-12">
+          <div class="md:col-span-7"><h2 class="rv text-balance font-display text-[clamp(2rem,4.2vw,3.6rem)] font-medium leading-[1.02] tracking-tight text-bone">The string you are flying, seen from outside.</h2></div>
+          <div class="md:col-span-4 md:col-start-9"><p class="rv max-w-sm text-[15px] leading-relaxed text-fog" style="--rvd: 0.12s">This whole page is one camera flight down a spline — every module a station on the route. Here the map: the path you've traveled burns acid, the road ahead waits in gray, and the pulsing marker is you, right now.</p></div>
+        </div>
+      </div>
+      <div id="fly-wrap" class="relative mx-auto h-[260vh] max-w-[1440px]">
+        <div class="sticky top-0 flex h-screen items-center px-5 md:px-10">
+          <div class="relative w-full border border-line bg-ink2">
+            <div id="gl-fly" class="relative h-[62vh] min-h-[420px] w-full md:h-[78vh]">
+              <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.06),transparent_64%)]"></div>
+            </div>
+            <div class="tick-label pointer-events-none absolute left-4 top-4 flex items-center gap-2 text-fog">
+              <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>ROUTE OVERVIEW — YOU ARE HERE
+            </div>
+            <div class="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-wrap items-end justify-between gap-4 p-4">
+              <div class="grid grid-cols-3 divide-x divide-line border border-line bg-ink/80 backdrop-blur-md">
+                <div class="px-3 py-2"><div class="tick-label text-fog">TRAVELED</div><div id="fly-t" class="tick-label mt-0.5 tabular-nums text-bone">000%</div></div>
+                <div class="px-3 py-2"><div class="tick-label text-fog">STATION</div><div id="fly-seg" class="tick-label mt-0.5 tabular-nums text-bone">00 / 00</div></div>
+                <div class="px-3 py-2"><div class="tick-label text-fog">SPEED</div><div id="fly-spd" class="tick-label mt-0.5 tabular-nums text-bone">+0</div></div>
+              </div>
+              <span class="tick-label hidden text-fog md:block">TRAVELED ← drawRange(uProg) · ORBIT ← SECTION PROGRESS</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== +G GRID ==================== -->
+    <section id="m-grid" data-module="+G / STRINGGRID" class="relative border-t border-line">
+      <div class="mx-auto max-w-[1440px] px-5 pt-14 md:px-10 md:pt-20">
+        <div class="flex items-center justify-between gap-4 border-b border-line pb-4">
+          <div class="flex items-center gap-3"><span class="h-1.5 w-1.5 animate-blink bg-acid"></span>
+            <span class="tick-label text-fog">MODULE <span class="text-bone">+G</span> — <span class="text-acid">STRINGGRID</span></span></div>
+          <div class="hidden gap-2 md:flex">
+            <span class="tick-label border border-line px-2 py-1 text-fog">FIELD</span>
+            <span class="tick-label border border-line px-2 py-1 text-fog">FALLOFF</span>
+            <span class="tick-label border border-line px-2 py-1 text-fog">CURSOR</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-6 pb-10 pt-8 md:grid-cols-12 md:pb-16 md:pt-12">
+          <div class="md:col-span-7"><h2 class="rv text-balance font-display text-[clamp(2rem,4.2vw,3.6rem)] font-medium leading-[1.02] tracking-tight text-bone">A field that leans toward the cursor.</h2></div>
+          <div class="md:col-span-4 md:col-start-9"><p class="rv max-w-sm text-[15px] leading-relaxed text-fog" style="--rvd: 0.12s">A grid of dots on a canvas. Each dot reads its distance to the pointer, brightens and swells within a falloff radius, and drifts back to rest. The whole field breathes on scroll velocity.</p></div>
+        </div>
+      </div>
+      <div class="mx-auto max-w-[1440px] px-5 pb-16 md:px-10 md:pb-24">
+        <div class="relative border border-line bg-ink2">
+          <div id="grid-zone" class="relative h-[56vh] min-h-[380px] w-full overflow-hidden">
+            <canvas id="grid-canvas" class="absolute inset-0 h-full w-full"></canvas>
+          </div>
+          <div class="tick-label pointer-events-none absolute left-4 top-4 flex items-center gap-2 text-fog">
+            <span class="h-1.5 w-1.5 animate-blink bg-acid"></span>MOVE THE CURSOR OVER THE FIELD
+          </div>
+          <div class="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-wrap items-end justify-between gap-4 p-4">
+            <div class="grid grid-cols-3 divide-x divide-line border border-line bg-ink/80 backdrop-blur-md">
+              <div class="px-3 py-2"><div class="tick-label text-fog">CELLS</div><div id="grid-cells" class="tick-label mt-0.5 tabular-nums text-bone">0</div></div>
+              <div class="px-3 py-2"><div class="tick-label text-fog">RADIUS</div><div id="grid-radius" class="tick-label mt-0.5 tabular-nums text-bone">0</div></div>
+              <div class="px-3 py-2"><div class="tick-label text-fog">CURSOR</div><div id="grid-xy" class="tick-label mt-0.5 tabular-nums text-bone">— · —</div></div>
+            </div>
+            <span class="tick-label hidden text-fog md:block">SIZE ← FALLOFF(dist) · GLOW ← Σ VELOCITY</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ==================== 09 IMPULSE ==================== -->
     <section id="m-impulse" data-module="09 / STRINGIMPULSE" class="relative border-t border-line">
       <div class="mx-auto max-w-[1440px] px-5 pt-14 md:px-10 md:pt-20">
@@ -1062,6 +1164,39 @@
           <div id="bento-uptime" class="mt-4 font-mono text-3xl font-light tabular-nums text-bone md:text-4xl">00:00</div>
         </div>
       </div>
+
+      <!-- kinetic counters — spin up from zero on first sight -->
+      <div class="mx-auto max-w-[1440px] px-5 pb-12 md:px-10 md:pb-16">
+        <div class="grid grid-cols-2 gap-px border border-line bg-line md:grid-cols-4">
+          <div class="bg-panel p-6 md:p-8">
+            <div class="font-mono text-5xl font-light tabular-nums text-acid md:text-6xl"><span class="rv" data-countup="0" data-count-modules>00</span></div>
+            <div class="tick-label mt-3 text-fog">MODULES REGISTERED</div>
+          </div>
+          <div class="bg-panel p-6 md:p-8">
+            <div class="font-mono text-5xl font-light tabular-nums text-bone md:text-6xl"><span class="rv" data-countup="60">60</span></div>
+            <div class="tick-label mt-3 text-fog">TARGET FPS</div>
+          </div>
+          <div class="bg-panel p-6 md:p-8">
+            <div class="font-mono text-5xl font-light tabular-nums text-bone md:text-6xl"><span class="rv" data-countup="0" data-count-hotkeys>00</span></div>
+            <div class="tick-label mt-3 text-fog">HOTKEYS BOUND</div>
+          </div>
+          <div class="bg-panel p-6 md:p-8">
+            <div class="font-mono text-5xl font-light tabular-nums text-bone md:text-6xl"><span class="rv" data-countup="100">100</span><span class="text-acid">%</span></div>
+            <div class="tick-label mt-3 text-fog">ONE FILE · ZERO FRAMEWORK</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- variable-axis demo — weight (real wght axis) + synthetic slant, both driven by scroll velocity -->
+      <div class="mx-auto max-w-[1440px] px-5 pb-16 md:px-10 md:pb-24">
+        <div class="flex items-center justify-between border-b border-line pb-3">
+          <span class="tick-label text-fog">VARIABLE FONT AXES ← SCROLL VELOCITY</span>
+          <span class="tick-label tabular-nums text-bone">wght <span id="axis-wght" class="text-acid">300</span> · slnt <span id="axis-slnt" class="text-acid">0°</span></span>
+        </div>
+        <div class="overflow-hidden py-8">
+          <span id="axis-demo" class="inline-block select-none font-display text-[clamp(2.4rem,8vw,7rem)] leading-none tracking-tight text-bone" style="font-variation-settings: 'wght' 300">SCROLL TO DEFORM THE TYPE</span>
+        </div>
+      </div>
     </section>
 
     <!-- ==================== OUTRO MARQUEE ==================== -->
@@ -1071,7 +1206,7 @@
 
     <!-- ==================== CINEMATIC OUTRO ==================== -->
     <section id="m-outro" data-module="+X / TRANSMISSION" class="relative overflow-hidden border-t border-line">
-      <div class="grid-bg absolute inset-0 opacity-70"></div>
+      <div class="hex-bg absolute inset-0 opacity-70"></div>
       <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(var(--acid-rgb),0.1),transparent_65%)]"></div>
       <div class="relative mx-auto max-w-[1440px] px-5 py-24 md:px-10 md:py-40">
         <div class="flex items-center justify-between border-b border-line pb-6">
@@ -1282,13 +1417,23 @@
           </button>
           <button class="flip-card rv" style="--rvd: 0.24s">
             <div class="flip-inner">
-              <div class="flip-face"><div class="tick-label text-fog">MODULES</div><div class="tick-label mt-3 text-bone">20 LIVE</div></div>
+              <div class="flip-face"><div class="tick-label text-fog">MODULES</div><div class="tick-label mt-3 text-bone"><span class="tabular-nums" data-countup="20">20</span> LIVE</div></div>
               <div class="flip-face flip-back"><div class="tick-label text-acid">6 THEMES</div><div class="tick-label mt-3 text-bone">30+ HOTKEYS · PORTSTACK · GLYPH STORM</div></div>
             </div>
           </button>
         </div>
         <div class="mt-10 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 border border-line bg-panel px-5 py-4">
           <span class="tick-label flex items-center gap-2 text-fog"><span class="h-1.5 w-1.5 animate-blink bg-acid"></span>SYS NOMINAL</span>
+          <span class="tick-label flex items-center gap-2 text-fog">TX SIGNAL
+            <svg id="ft-signal" class="h-3.5 w-8" viewBox="0 0 32 14" aria-hidden="true">
+              <rect class="ftsig" x="1"  y="10" width="3.5" height="3" fill="var(--color-acid)"/>
+              <rect class="ftsig" x="6.5"  y="8" width="3.5" height="5" fill="var(--color-acid)"/>
+              <rect class="ftsig" x="12" y="6" width="3.5" height="7" fill="var(--color-acid)"/>
+              <rect class="ftsig" x="17.5" y="4" width="3.5" height="9" fill="var(--color-acid)"/>
+              <rect class="ftsig" x="23" y="2" width="3.5" height="11" fill="var(--color-acid)"/>
+              <path d="M29.5 2 Q 31.5 7 29.5 12" fill="none" stroke="var(--color-acid)" stroke-width="1" opacity="0.5"/>
+            </svg>
+          </span>
           <span class="tick-label tabular-nums text-fog">SESSION <span id="ft-uptime" class="text-bone">00:00</span></span>
           <span class="tick-label tabular-nums text-fog">DRAW CALLS <span class="text-bone">2 / FRAME</span></span>
           <span class="tick-label tabular-nums text-fog">GC PRESSURE <span class="text-acid">LOW</span></span>

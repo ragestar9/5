@@ -1,8 +1,116 @@
 # CHANGES — Audit, Bug Fixes & Design Upgrade
 
 **Project:** StringTune × Three.js — 3D Motion Runtime (`enhance-threejs-extension-branch (10)`)
-**Date:** 2026-07-18
-**Build status:** ✅ `vite build` passes clean — `dist/index.html` 1.09 MB (412 KB gzip), single file.
+**Date:** 2026-07-18 · updated 2026-07-19
+**Build status:** ✅ `vite build` passes clean — `dist/index.html` 1.10 MB (416 KB gzip), single file.
+
+---
+
+## Phase 4 — SVG systems pass (nav → hero → dividers → data → spine → toasts → cursors → decor)
+
+### Nav & logo
+- **Logo morph** — `#nav-mark` is now an inline SVG whose path cycles square → circle →
+  triangle (all three authored as 8-segment cubic paths with matching command structure,
+  so anime.js tweens `d` directly). Cycles every 4.2s; hover advances immediately.
+- **Nav hover glow** — `feGaussianBlur` filter (`#nav-glow`) engages on brand hover.
+
+### Hero
+- **Dial ring** — the decorative dial's 24 tick marks now fill clockwise (12 o'clock start)
+  with `docProgress`, lit ticks in the theme accent.
+- **Scrim brackets** — the four corner brackets are now SVG paths that draw themselves in
+  at boot (staggered stroke-dashoffset via anime.js).
+- **Heading underline** — a hand-drawn wavy SVG path under "MOTION." draws in right after
+  the word lands.
+
+### Section transitions
+- **Circuit dividers** — every module boundary carries a per-section circuit-line SVG
+  (seeded jogs + connection pads) instead of a plain 1px border.
+- **Scroll progress wave** — a sine-wave path rides each divider and draws itself across
+  as the section travels into the viewport (stroke-dashoffset, quantised writes).
+
+### Data & registry
+- **Module icons** — 18 unique geometric stroke icons (one per registry node), scale/rotate
+  on row hover and invert with the acid hover fill.
+- **Stat glyphs** — small accent SVGs beside the PXL/PCT/X/Y/VEL/DIR telemetry readouts.
+- **Bento ornaments** — corner-bracket SVGs injected on every bento tile, drawing in on
+  hover; also wired the previously-dead `--bx/--by` cursor-anchored radial highlight.
+
+### Progress spine
+- **SVG nodes** — hexagons for numbered modules, diamonds for `+X` extras (replacing the
+  CSS squares); passed nodes show a dim core, active node scales up with a spin.
+- **Spine glow** — shared `feGaussianBlur` filter (`#spine-glow`) + stroke pulse on the
+  active node.
+
+### Status & boot
+- **Toast icons** — tone-matched animated SVGs (checkmark = ok, alert triangle = warn,
+  terminal chevron = info/meta) whose strokes draw in as the toast springs in.
+- **Hexagon boot spinner** — the preloader's flat progress bar is replaced by a double
+  hexagon: outer ring fills with the boot counter (pathLength dashoffset), inner dashed
+  ring spins via anime.js until mount.
+
+### Cursor system
+- **Section-specific cursors** — scrub cursor (vertical double-arrow) over PROGRESS and
+  SEQUENCE, glitch double-crosshair over SPLIT and MASK, list-select cursor over REGISTRY.
+
+### Decorative
+- **Honeycomb overlay** — new `.hex-bg` SVG hex-cell pattern, applied to the outro.
+- **Footer signal bars** — animated 5-bar transmission meter (staggered climb loop) in the
+  footer status strip.
+
+All new SVG work is theme-reactive (currentColor / `--color-acid` / `--acid-rgb`) and
+respects `prefers-reduced-motion` (static end states, no draw/pulse animations).
+
+---
+
+## Phase 3 — Engine split: Three.js owns 3D, Anime.js owns UI (4 stages)
+
+Division of labor enforced across the page: everything that moves in 3D space
+renders through Three.js; every DOM/UI transition tweens through Anime.js.
+
+### Stage 1 — `#arc-layer` → Three.js GPU particle field
+The canvas-2D pixel arc (~25k `fillRect` per frame on the CPU) is gone. The same
+`<canvas>` now hosts a Three.js scene with four populations:
+- **Arc grid** — a viewport-spanning grid of square points whose intensity is the
+  old arc field math (bowl → horizon → dome across `docProgress`, velocity widens
+  the band, same accent/core color mix) evaluated per-point in the vertex shader.
+- **Starfield** — ~240 twinkling stars behind the arc with depth-weighted cursor parallax.
+- **Dust motes** — the drifting data pixels, integrated on the GPU (`fract()` wrap),
+  still quantised to the arc's pixel grid; scroll velocity accelerates the stream
+  via a CPU-integrated drift uniform.
+- **Fireflies** — soft accent orbs on Lissajous wanders that lean toward the cursor.
+Preserved contracts: `__setArcAcid` live retint (renders a static frame under
+reduced motion), idle half-rate power saver, `no-fx` kill switch, snapshot support
+(new `__renderArc()` forces a sync render before `drawImage`), reduced-motion static frame.
+
+### Stage 2 — GL transitions: Three.js 3D wipe for section jumps
+New `#gl-wipe` fullscreen shader layer: twelve noise-staggered slats close from
+top and bottom with cylindrical shading, drifting grain, an acid-glow leading
+edge and a seam flash at full cover. `wipeTransport` (registry PORT buttons,
+palette jumps, footer RETURN) now drives it — **anime.js tweens the phase uniform**
+(close 380ms → teleport behind full cover → open 480ms). The DOM shutter remains
+as the no-WebGL fallback; reduced motion still teleports instantly. Theme-reactive
+via `__setWipeAcid`.
+
+### Stage 3 — Anime.js UI systems
+- **Text reveals** — plain-text section headings split into masked words that
+  cascade up with a 65ms stagger on first sight.
+- **Module enter** — `.rv` reveals moved from CSS transitions to anime.js
+  (fade + rise + de-blur, honors each element's `--rvd` delay); registry rows
+  share the same path. `.rv.in` stays as the snap state for portstack clones
+  and reduced motion.
+- **Count-up stats** — `[data-countup]` numbers (registry node count, footer
+  module count) spin from zero when scrolled into view.
+- **Command palette** — opens with an elastic spring (scale + drop), closes with
+  a quick fade; CSS `modalIn` keyframe now only serves the hotkeys overlay.
+- **Toasts** — spring in from the right, ease out on dismiss via anime.js
+  (CSS `toastIn`/`toastOut` keyframes removed; the draining progress bar stays CSS).
+
+### Stage 4 — Animated theme switch
+Cycling themes (T / swatches) no longer snaps: anime.js tweens the accent rgb
+triplet over 650ms and pushes every frame into the CSS vars (inline `!important`
+overrides while tweening, stylesheet control returned on settle), the fx/arc/wipe
+shader uniforms and every registered three.js material — page chrome, aurora sky,
+arc field and 3D scenes glide to the new color together. Instant under reduced motion.
 
 ---
 
